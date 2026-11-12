@@ -72,9 +72,13 @@ function selection(values, config) {
   const scenarios = pick(values.scenarios, Object.keys(config.scenarios), Object.keys(config.scenarios), 'scenario');
   const engineIds = Object.keys(JSON.parse(readFileSync(fromRoot('engines/engines.json'), 'utf8')).engines);
   const engines = pick(values.engines, config.engines, engineIds, 'engine');
+  const countsPath = join(fromRoot(config.groundTruth.dir), 'summary.json');
   const queries = loadQueries(fromRoot(config.queries.dir), {
     templates: parseList(values.templates) ?? config.queries.templates,
     instances: values.instances ? Number(values.instances) : config.queries.instances,
+    counts: config.queries.preferNonEmpty && existsSync(countsPath) ?
+      JSON.parse(readFileSync(countsPath, 'utf8')) :
+      undefined,
   });
   const replications = values.replications ? Number(values.replications) : config.replications;
   return { profiles, scenarios, engines, queries, replications };

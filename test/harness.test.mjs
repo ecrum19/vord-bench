@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import { createPartitioner, split } from '../data/split.mjs';
-import { aggregate, groupBy } from '../harness/analyze.mjs';
+import { aggregate, formatRows, groupBy } from '../harness/analyze.mjs';
 import { buildEngineConfig } from '../harness/generate-engines.mjs';
 import { ResultMatcher, bindingsKey, jsonRowKey, jsonTermKey, termKey } from '../harness/lib/canonical.mjs';
 import { compareTemplates, loadQueries, splitQueries } from '../harness/lib/queries.mjs';
@@ -73,6 +73,8 @@ describe('queries', () => {
     writeFileSync(join(dir, 'C1.txt'), 'SELECT 4 {}\n');
     assert.deepEqual(loadQueries(dir).map(query => query.id), [ 'L1-0', 'S2-0', 'C1-0' ]);
     assert.deepEqual(loadQueries(dir, { templates: [ 'S2' ], instances: 5 }).map(query => query.query), [ 'SELECT 2 {}', 'SELECT 3 {}' ]);
+    assert.deepEqual(loadQueries(dir, { templates: [ 'S2' ], counts: { 'S2-0': 0, 'S2-1': 3 }}).map(query => query.id), [ 'S2-1' ]);
+    assert.deepEqual(loadQueries(dir, { templates: [ 'S2' ], counts: {}}).map(query => query.id), [ 'S2-0' ]);
     assert.throws(() => loadQueries(dir, { templates: [ 'F9' ]}), /Unknown query template F9/u);
     assert.throws(() => loadQueries(join(dir, 'missing')), /does not exist/u);
     assert.deepEqual([ 'C1', 'S10', 'L2', 'F1', 'S2' ].sort(compareTemplates), [ 'L2', 'S2', 'S10', 'F1', 'C1' ]);
@@ -182,7 +184,7 @@ describe('request recording', () => {
   it('records requests made through the wrapped fetch', async() => {
     const { recordingFetch, requests } = createRecordingFetch(() => 0);
     await assert.rejects(recordingFetch('http://127.0.0.1:9/sparql?query=x'));
-    assert.deepEqual(requests.map(({ host, kind, status }) => ({ host, kind, status })), [{ host: '127.0.0.1:9', kind: 'query', status: 0 }]);
+    assert.deepEqual(requests.map(({ host, kind, status }) => ({ host, kind, status })), [{ host: '127.0.0.1:9', kind: 'query', status: 'failed' }]);
   });
 });
 
@@ -198,6 +200,8 @@ describe('analysis', () => {
     assert.deepEqual(aggregate(groups[0].runs), {
       runs: 2, failed: 0, complete: 1, recall: 0.75, timeS: 2, ttfrS: 0.2, requests: 5, rejected429: 1, rejected503: 0, truncated: 0.5,
     });
+    assert.equal(formatRows([{ engine: 'A', recall: 0.75, runs: 2, timeS: undefined }], 'csv'), 'engine,recall,runs,timeS\nA,0.75,2,\n');
+    assert.equal(formatRows([{ engine: 'A', recall: 1 }], 'md'), '| engine | recall |\n|---|---|\n| A | 1 |\n');
     assert.deepEqual(aggregate(groups[1].runs), {
       runs: 1, failed: 1, complete: 0, recall: 0, timeS: undefined, ttfrS: undefined, requests: 1, rejected429: 0, rejected503: 1, truncated: 0,
     });

@@ -4,12 +4,13 @@
   "queries": {
     "dir": "data/generated/watdiv/queries",
     "templates": [
-      "L1",
+      "L3",
       "S1",
-      "F1",
+      "F5",
       "C3"
     ],
-    "instances": 1
+    "instances": 1,
+    "preferNonEmpty": true
   },
   "scenarios": {
     "single": [

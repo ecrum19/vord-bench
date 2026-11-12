@@ -48,7 +48,8 @@ export function createRecordingFetch(elapsed) {
       entry.ms = elapsed() - entry.start;
       return response;
     } catch (error) {
-      entry.status = 0;
+      // Comunica aborts requests it no longer needs, such as COUNT queries after countTimeout.
+      entry.status = error.name === 'AbortError' ? 'aborted' : 'failed';
       entry.error = error.name;
       entry.ms = elapsed() - entry.start;
       throw error;

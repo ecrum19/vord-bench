@@ -13,11 +13,12 @@ export function splitQueries(text) {
 /**
  * Load the queries of a directory of WatDiv query files (one file per template, e.g. L1.txt).
  * @param {string} dir
- * @param {{ templates?: string[], instances?: number }} options
- *   templates: the templates to use (all if empty); instances: the number of instances per template.
+ * @param {{ templates?: string[], instances?: number, counts?: Record<string, number> }} options
+ *   templates: the templates to use (all if empty); instances: the number of instances per template;
+ *   counts: expected result counts per query id, to prefer instances with results over empty ones.
  * @returns {{ id: string, template: string, instance: number, query: string }[]}
  */
-export function loadQueries(dir, { templates, instances = 1 } = {}) {
+export function loadQueries(dir, { templates, instances = 1, counts } = {}) {
   if (!existsSync(dir)) {
     throw new Error(`Query directory ${dir} does not exist; run the setup first`);
   }
@@ -31,10 +32,13 @@ export function loadQueries(dir, { templates, instances = 1 } = {}) {
     if (!available.includes(template)) {
       throw new Error(`Unknown query template ${template}; available: ${available.join(', ')}`);
     }
-    const instancesOfTemplate = splitQueries(readFileSync(join(dir, `${template}.txt`), 'utf8'));
-    for (let instance = 0; instance < Math.min(instances, instancesOfTemplate.length); instance++) {
-      queries.push({ id: `${template}-${instance}`, template, instance, query: instancesOfTemplate[instance] });
+    const instancesOfTemplate = splitQueries(readFileSync(join(dir, `${template}.txt`), 'utf8'))
+      .map((query, instance) => ({ id: `${template}-${instance}`, template, instance, query }));
+    if (counts) {
+      // A stable sort keeps the original order within instances with and without results.
+      instancesOfTemplate.sort((a, b) => Number(!counts[a.id]) - Number(!counts[b.id]));
     }
+    queries.push(...instancesOfTemplate.slice(0, instances));
   }
   return queries;
 }

@@ -16,7 +16,7 @@ vord-proxy :3000-3004 ── one port per endpoint; profile in the path: /<profi
 Oxigraph (read-only) ── all │ users │ products │ offers │ reviews
 ```
 
-- **Data and queries.** The data is WatDiv at scale 10 (1.09M triples, from [comunica-performance-assets](https://github.com/comunica/comunica-performance-assets)). The queries come from its 20 templates (L, S, F, C), using the first instance of each by default.
+- **Data and queries.** The data is WatDiv at scale 10 (1.09M triples, from [comunica-performance-assets](https://github.com/comunica/comunica-performance-assets)). The queries come from its 20 templates (L, S, F, C). By default, each template contributes its first instance that has results (`preferNonEmpty`). At this scale, all instances of S3, S4, S5, S7, F1, C1 and C2 have no results; those templates still measure requests and failures.
   - [data/split.mjs](data/split.mjs) splits the dataset by subject type into 4 endpoints: `users`, `products`, `offers` and `reviews` ([data/partitions.json](data/partitions.json)).
   - Every triple ends up in exactly one partition, so the federated scenario has the same answers as the `all` endpoint.
 - **Scenarios.** In `single`, Comunica queries the `all` endpoint. In `federated`, it queries the 4 partitions.

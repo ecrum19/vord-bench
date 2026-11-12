@@ -55,7 +55,21 @@ export function groupBy(runs, fields) {
   return [ ...groups.values() ];
 }
 
-const format = value => value === undefined ? '' : Number.isInteger(value) ? String(value) : value.toFixed(2);
+const format = value => {
+  if (typeof value !== 'number') {
+    return value ?? '';
+  }
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
+};
+
+/**
+ * Format rows of values as CSV or as a Markdown table.
+ * @param {object[]} rows
+ * @param {'csv' | 'md'} kind
+ */
+export function formatRows(rows, kind) {
+  return kind === 'csv' ? toCsv(rows) : toMarkdown(rows);
+}
 
 function toCsv(rows) {
   const columns = Object.keys(rows[0] ?? {});

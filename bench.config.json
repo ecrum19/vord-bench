@@ -4,7 +4,8 @@
   "queries": {
     "dir": "data/generated/watdiv/queries",
     "templates": [],
-    "instances": 1
+    "instances": 1,
+    "preferNonEmpty": true
   },
   "scenarios": {
     "single": [ "all" ],
