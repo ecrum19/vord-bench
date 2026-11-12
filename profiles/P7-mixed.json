@@ -1,0 +1,65 @@
+{
+  "id": "P7-mixed",
+  "label": "A different restriction per federated endpoint",
+  "scenarios": [
+    "federated"
+  ],
+  "endpoints": {
+    "users": [
+      {
+        "id": "rate",
+        "type": "RateRestriction",
+        "metric": "requestsPerWindow",
+        "maxValue": 10,
+        "windowDuration": "PT6S",
+        "unit": "COUNT",
+        "scope": "PerClientIP",
+        "enforcement": "RejectRequest",
+        "hardRestriction": true,
+        "returnsStatusCode": 429,
+        "httpSignalHeader": "retry-after"
+      }
+    ],
+    "products": [
+      {
+        "id": "results",
+        "type": "ResultSizeRestriction",
+        "metric": "resultBindings",
+        "maxValue": 1000,
+        "unit": "COUNT",
+        "scope": "PerRequest",
+        "enforcement": "TruncateResult",
+        "hardRestriction": true
+      }
+    ],
+    "offers": [
+      {
+        "id": "rate",
+        "type": "RateRestriction",
+        "metric": "requestsPerWindow",
+        "maxValue": 60,
+        "burstValue": 15,
+        "windowDuration": "PT6S",
+        "unit": "COUNT",
+        "scope": "PerClientIP",
+        "enforcement": "RejectRequest",
+        "hardRestriction": true,
+        "returnsStatusCode": 429,
+        "retryAfterHint": "PT3S",
+        "httpSignalHeader": "retry-after"
+      },
+      {
+        "id": "concurrency",
+        "type": "ConcurrentRequestsRestriction",
+        "maxValue": 3,
+        "unit": "COUNT",
+        "scope": "PerClientIP",
+        "enforcement": "RejectRequest",
+        "hardRestriction": true,
+        "returnsStatusCode": 503,
+        "httpSignalHeader": "retry-after"
+      }
+    ],
+    "reviews": []
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "id": "P1-rate",
+  "label": "Strict rate: 10 requests per 6 s (Wikidata's 10/min, 10x faster)",
+  "restrictions": [
+    {
+      "id": "rate",
+      "type": "RateRestriction",
+      "metric": "requestsPerWindow",
+      "maxValue": 10,
+      "windowDuration": "PT6S",
+      "unit": "COUNT",
+      "scope": "PerClientIP",
+      "enforcement": "RejectRequest",
+      "hardRestriction": true,
+      "returnsStatusCode": 429,
+      "httpSignalHeader": "retry-after"
+    }
+  ]
+}

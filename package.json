@@ -1,0 +1,22 @@
+{
+  "name": "vord-bench",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Benchmark for Comunica's support of endpoint restrictions described with VoRD",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "setup": "bash scripts/setup.sh",
+    "proxy": "node proxy/vord-proxy.mjs --config endpoints.json --profiles profiles",
+    "generate-engines": "node harness/generate-engines.mjs",
+    "ground-truth": "node harness/ground-truth.mjs",
+    "bench": "node harness/run.mjs",
+    "bench:dry": "node harness/run.mjs --dry-run",
+    "bench:smoke": "node harness/run.mjs --config bench.smoke.json",
+    "analyze": "node harness/analyze.mjs"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "id": "P2-burst",
+  "label": "Rate with bursts: 60 per 6 s, bursts of 15 (60/min with burst 15, 10x faster)",
+  "restrictions": [
+    {
+      "id": "rate",
+      "type": "RateRestriction",
+      "metric": "requestsPerWindow",
+      "maxValue": 60,
+      "burstValue": 15,
+      "windowDuration": "PT6S",
+      "unit": "COUNT",
+      "scope": "PerClientIP",
+      "enforcement": "RejectRequest",
+      "hardRestriction": true,
+      "returnsStatusCode": 429,
+      "retryAfterHint": "PT3S",
+      "httpSignalHeader": "retry-after"
+    }
+  ]
+}

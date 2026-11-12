@@ -1,0 +1,10 @@
+{
+  "description": "Splits WatDiv by the type of each triple's subject (the IRI's local name without digits). Every triple goes to exactly one partition, so their union is the full dataset.",
+  "default": "products",
+  "partitions": {
+    "users": [ "User" ],
+    "products": [ "Product", "ProductCategory", "SubGenre", "Genre", "Topic", "Website", "City", "Country", "Language" ],
+    "offers": [ "Retailer", "Offer", "Purchase" ],
+    "reviews": [ "Review" ]
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "description": "A small subset for checking the setup: a few queries, the main profiles and engines, one replication.",
+  "comunicaDir": "../comunica-vord",
+  "queries": {
+    "dir": "data/generated/watdiv/queries",
+    "templates": [
+      "L1",
+      "S1",
+      "F1",
+      "C3"
+    ],
+    "instances": 1
+  },
+  "scenarios": {
+    "single": [
+      "all"
+    ],
+    "federated": [
+      "users",
+      "products",
+      "offers",
+      "reviews"
+    ]
+  },
+  "profiles": [
+    "P0-none",
+    "P1-rate",
+    "P3-truncate",
+    "P7-mixed"
+  ],
+  "engines": [
+    "A-naive",
+    "B-backoff",
+    "C-vord-http",
+    "D-vord-full"
+  ],
+  "replications": 1,
+  "timeoutMs": 120000,
+  "warmup": false,
+  "pauseMs": 200,
+  "maxMemoryMb": 4096,
+  "trace": true,
+  "proxy": {
+    "baseUrl": "http://localhost",
+    "adminUrl": "http://localhost:3099",
+    "endpointsFile": "endpoints.json"
+  },
+  "groundTruth": {
+    "endpoint": "http://localhost:7878/query",
+    "dir": "data/generated/ground-truth"
+  }
+}

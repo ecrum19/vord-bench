@@ -1,0 +1,17 @@
+{
+  "id": "P4-concurrency",
+  "label": "At most 3 concurrent requests (503 otherwise)",
+  "restrictions": [
+    {
+      "id": "concurrency",
+      "type": "ConcurrentRequestsRestriction",
+      "maxValue": 3,
+      "unit": "COUNT",
+      "scope": "PerClientIP",
+      "enforcement": "RejectRequest",
+      "hardRestriction": true,
+      "returnsStatusCode": 503,
+      "httpSignalHeader": "retry-after"
+    }
+  ]
+}

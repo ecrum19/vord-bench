@@ -1,0 +1,65 @@
+{
+  "id": "P8-unadvertised",
+  "label": "P6's restrictions, enforced but not described (control: VoRD engines get no information)",
+  "advertise": false,
+  "restrictions": [
+    {
+      "id": "rate",
+      "type": "RateRestriction",
+      "metric": "requestsPerWindow",
+      "maxValue": 30,
+      "burstValue": 10,
+      "windowDuration": "PT6S",
+      "unit": "COUNT",
+      "scope": "PerClientIP",
+      "enforcement": "RejectRequest",
+      "hardRestriction": true,
+      "returnsStatusCode": 429,
+      "retryAfterHint": "PT2S",
+      "httpSignalHeader": "retry-after"
+    },
+    {
+      "id": "results",
+      "type": "ResultSizeRestriction",
+      "metric": "resultBindings",
+      "maxValue": 1000,
+      "unit": "COUNT",
+      "scope": "PerRequest",
+      "enforcement": "TruncateResult",
+      "hardRestriction": true
+    },
+    {
+      "id": "concurrency",
+      "type": "ConcurrentRequestsRestriction",
+      "maxValue": 3,
+      "unit": "COUNT",
+      "scope": "PerClientIP",
+      "enforcement": "RejectRequest",
+      "hardRestriction": true,
+      "returnsStatusCode": 503,
+      "httpSignalHeader": "retry-after"
+    },
+    {
+      "id": "timeout",
+      "type": "ResponseTimeRestriction",
+      "metric": "evaluationTime",
+      "maxValue": 2,
+      "unit": "SEC",
+      "scope": "PerRequest",
+      "enforcement": "RejectRequest",
+      "hardRestriction": true,
+      "returnsStatusCode": 503
+    },
+    {
+      "id": "dailyQuota",
+      "type": "QuotaRestriction",
+      "metric": "requestsPerDay",
+      "maxValue": 500000,
+      "windowDuration": "P1D",
+      "unit": "COUNT",
+      "scope": "PerAPIKey",
+      "enforcement": "QueueRequest",
+      "hardRestriction": false
+    }
+  ]
+}

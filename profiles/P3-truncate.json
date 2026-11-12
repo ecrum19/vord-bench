@@ -1,0 +1,16 @@
+{
+  "id": "P3-truncate",
+  "label": "Result truncation at 1,000 bindings",
+  "restrictions": [
+    {
+      "id": "results",
+      "type": "ResultSizeRestriction",
+      "metric": "resultBindings",
+      "maxValue": 1000,
+      "unit": "COUNT",
+      "scope": "PerRequest",
+      "enforcement": "TruncateResult",
+      "hardRestriction": true
+    }
+  ]
+}

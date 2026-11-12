@@ -1,0 +1,17 @@
+{
+  "id": "P5-timeout",
+  "label": "Requests rejected after 2 s of evaluation (60 s, 30x faster)",
+  "restrictions": [
+    {
+      "id": "timeout",
+      "type": "ResponseTimeRestriction",
+      "metric": "evaluationTime",
+      "maxValue": 2,
+      "unit": "SEC",
+      "scope": "PerRequest",
+      "enforcement": "RejectRequest",
+      "hardRestriction": true,
+      "returnsStatusCode": 503
+    }
+  ]
+}

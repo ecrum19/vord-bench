@@ -1,0 +1,30 @@
+{
+  "description": "The full benchmark. COMUNICA_DIR overrides comunicaDir (relative paths are relative to this repository).",
+  "comunicaDir": "../comunica-vord",
+  "queries": {
+    "dir": "data/generated/watdiv/queries",
+    "templates": [],
+    "instances": 1
+  },
+  "scenarios": {
+    "single": [ "all" ],
+    "federated": [ "users", "products", "offers", "reviews" ]
+  },
+  "profiles": [ "P0-none", "P1-rate", "P2-burst", "P3-truncate", "P4-concurrency", "P5-timeout", "P6-combined", "P7-mixed", "P8-unadvertised" ],
+  "engines": [ "A-naive", "B-backoff", "Bp-backoff-eager", "C-vord-http", "D-vord-full" ],
+  "replications": 3,
+  "timeoutMs": 300000,
+  "warmup": true,
+  "pauseMs": 200,
+  "maxMemoryMb": 4096,
+  "trace": false,
+  "proxy": {
+    "baseUrl": "http://localhost",
+    "adminUrl": "http://localhost:3099",
+    "endpointsFile": "endpoints.json"
+  },
+  "groundTruth": {
+    "endpoint": "http://localhost:7878/query",
+    "dir": "data/generated/ground-truth"
+  }
+}

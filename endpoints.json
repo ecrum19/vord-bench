@@ -1,0 +1,11 @@
+{
+  "adminPort": 3099,
+  "latencyMs": 0,
+  "endpoints": {
+    "all": { "port": 3000, "upstream": "http://oxigraph-all:7878/query" },
+    "users": { "port": 3001, "upstream": "http://oxigraph-users:7878/query" },
+    "products": { "port": 3002, "upstream": "http://oxigraph-products:7878/query" },
+    "offers": { "port": 3003, "upstream": "http://oxigraph-offers:7878/query" },
+    "reviews": { "port": 3004, "upstream": "http://oxigraph-reviews:7878/query" }
+  }
+}
