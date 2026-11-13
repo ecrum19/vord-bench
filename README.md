@@ -16,7 +16,7 @@ vord-proxy :3000-3004 ── one port per endpoint; profile in the path: /<profi
 Oxigraph (read-only) ── all │ users │ products │ offers │ reviews
 ```
 
-- **Data and queries.** The data is WatDiv at scale 10 (1.09M triples, from [comunica-performance-assets](https://github.com/comunica/comunica-performance-assets)). The queries come from its 20 templates (L, S, F, C). By default, each template contributes its first instance that has results (`preferNonEmpty`). At this scale, all instances of S3, S4, S5, S7, F1, C1 and C2 have no results; those templates still measure requests and failures.
+- **Data and queries.** The data is WatDiv at scale 10 (1.09M triples, from [comunica-performance-assets](https://github.com/comunica/comunica-performance-assets)). The queries are the WatDiv templates (L, S, F, C) and eight challenge queries (X), see [Queries](#queries).
   - [data/split.mjs](data/split.mjs) splits the dataset by subject type into 4 endpoints: `users`, `products`, `offers` and `reviews` ([data/partitions.json](data/partitions.json)).
   - Every triple ends up in exactly one partition, so the federated scenario has the same answers as the `all` endpoint.
 - **Scenarios.** In `single`, Comunica queries the `all` endpoint. In `federated`, it queries the 4 partitions.
@@ -30,6 +30,32 @@ Oxigraph (read-only) ── all │ users │ products │ offers │ reviews
   - Soft restrictions are only advertised, not enforced.
   - Each endpoint has its own port, because Comunica's HTTP actors keep their state per host.
 - **Ground truth.** Each query is evaluated directly on the unrestricted `all` store. A run is *complete* if it returns exactly these results, compared as a multiset.
+
+### Queries
+
+WatDiv fills the placeholders of its templates with values that are sampled independently of the data, so at scale 10 many of its instances have no results. [`harness/generate-queries.mjs`](harness/generate-queries.mjs) therefore instantiates the templates again, with values that give results on the full dataset:
+
+- The placeholders of a template are the entity constants whose value differs between its WatDiv instances. Constants that are equal in all instances, such as `wsdbm:Role2` in S2, are part of the template.
+- For every combination of placeholder values, the generator counts the results on the unrestricted store. It picks up to five combinations with results, at the 50th, 25th, 75th, 10th and 90th percentile of the result counts. The first instance, which the benchmark uses by default, has the median count.
+- If no placeholder values give results, the template's own constants are also replaced (*relaxed*; this is the case for C2, whose `wsdbm:Country5` gives no results).
+- Templates without results for any values are excluded: C1 has no constants and no results at this scale.
+
+The generator records the placeholders, picked values and result counts in `data/generated/queries/instances.json`.
+
+The challenge queries in [`data/challenge/`](data/challenge/) go beyond the basic graph patterns of WatDiv. Each one stresses a way in which restrictions can silently change or slow down results in a federation:
+
+| Query | Results | What it tests |
+|---|---|---|
+| X1 | 4470 | A large result from one endpoint: truncated by result size limits unless the client pages |
+| X2 | 238 | A small result that joins a large intermediate result (reviews of products) with a selective one (top-rated reviews with a title) across endpoints |
+| X3 | 854 | `OPTIONAL` across endpoints: products of a genre with their reviews and ratings, if any |
+| X4 | 13 | Aggregation (`COUNT`, `SUM`) over a join across endpoints: truncated input gives wrong counts and sums |
+| X5 | 10 | Top-k (`ORDER BY` and `LIMIT`) over thousands of offers: truncated input gives a wrong top 10, and the join needs many requests |
+| X6 | 66 | A numeric `FILTER` over a chain across three endpoints |
+| X7 | 323 | `UNION` of likes and purchases, whose patterns are spread over two endpoints |
+| X8 | 100 | A chain over all four endpoints, from a retailer to the ages of reviewers |
+
+Ratings and prices are plain literals in WatDiv, so the challenge queries cast them to `xsd:integer` where they compare or sum them.
 
 ### Restriction profiles
 
@@ -78,12 +104,13 @@ Each run is one query, with one engine, under one profile and scenario, in a fre
 The setup requires Docker with Compose, Node 20 or later, git, curl and unzip.
 
 ```bash
-npm run setup          # fork build, data, stores, endpoints, engines, ground truth (idempotent)
+npm run setup          # fork build, data, stores, endpoints, engines, queries, ground truth (idempotent)
 npm test               # unit tests; with the fork built, also checks how the fork reads the proxy's descriptions
 npm run bench:dry      # prints the run matrix and checks that everything is in place
 npm run bench:smoke    # a small subset: 4 queries x 4 profiles x 4 engines, with request traces
 npm run bench -- --name full-1
 npm run analyze -- results/full-1
+npm run plot -- results/full-1   # figures in results/full-1/figures/ (needs Python 3 with matplotlib)
 ```
 
 The `setup` script reads these environment variables:
@@ -112,7 +139,7 @@ The proxy also writes every request to `results/proxy/requests.jsonl`, tagged wi
 | `profiles/` | The restriction profiles |
 | `proxy/` | vord-proxy |
 | `engines/` | Engine definitions. Generated configs and compiled engines go in `engines/generated/` |
-| `data/` | The split script and partition map. Downloads, partitions and stores go in `data/generated/` and `data/stores/` |
-| `harness/` | Engine generation, ground truth, the runner, the per-run worker and the analysis |
+| `data/` | The split script, partition map and challenge queries. Downloads, partitions, generated queries and stores go in `data/generated/` and `data/stores/` |
+| `harness/` | Engine and query generation, ground truth, the runner, the per-run worker, the analysis and the plots |
 | `scripts/` | Setup |
 | `test/` | Tests (`node --test`) |

@@ -2,7 +2,9 @@
   "description": "The full benchmark. COMUNICA_DIR overrides comunicaDir (relative paths are relative to this repository).",
   "comunicaDir": "../comunica-vord",
   "queries": {
-    "dir": "data/generated/watdiv/queries",
+    "dir": "data/generated/queries",
+    "watdivDir": "data/generated/watdiv/queries",
+    "challengeDir": "data/challenge",
     "templates": [],
     "instances": 1,
     "preferNonEmpty": true

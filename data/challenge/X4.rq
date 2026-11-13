@@ -1,0 +1,9 @@
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX sorg: <http://schema.org/>
+PREFIX rev: <http://purl.org/stuff/rev#>
+SELECT ?contentRating (COUNT(?review) AS ?reviews) (SUM(xsd:integer(?rating)) AS ?ratingSum) WHERE {
+	?product sorg:contentRating ?contentRating .
+	?product rev:hasReview ?review .
+	?review rev:rating ?rating .
+}
+GROUP BY ?contentRating

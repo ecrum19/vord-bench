@@ -13,10 +13,12 @@
     "setup": "bash scripts/setup.sh",
     "proxy": "node proxy/vord-proxy.mjs --config endpoints.json --profiles profiles",
     "generate-engines": "node harness/generate-engines.mjs",
+    "queries": "node harness/generate-queries.mjs",
     "ground-truth": "node harness/ground-truth.mjs",
     "bench": "node harness/run.mjs",
     "bench:dry": "node harness/run.mjs --dry-run",
     "bench:smoke": "node harness/run.mjs --config bench.smoke.json",
-    "analyze": "node harness/analyze.mjs"
+    "analyze": "node harness/analyze.mjs",
+    "plot": "python3 harness/plot.py"
   }
 }

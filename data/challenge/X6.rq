@@ -1,0 +1,11 @@
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX wsdbm: <http://db.uwaterloo.ca/~galuc/wsdbm/>
+PREFIX sorg: <http://schema.org/>
+PREFIX rev: <http://purl.org/stuff/rev#>
+SELECT ?user ?review ?product WHERE {
+	?user sorg:nationality wsdbm:Country1 .
+	?review rev:reviewer ?user .
+	?review rev:rating ?rating .
+	?product rev:hasReview ?review .
+	FILTER(xsd:integer(?rating) >= 9)
+}

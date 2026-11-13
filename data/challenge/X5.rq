@@ -1,0 +1,10 @@
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX gr: <http://purl.org/goodrelations/>
+PREFIX rev: <http://purl.org/stuff/rev#>
+SELECT DISTINCT ?offer ?price WHERE {
+	?offer gr:includes ?product .
+	?offer gr:price ?price .
+	?product rev:hasReview ?review .
+}
+ORDER BY DESC(xsd:integer(?price)) ?offer
+LIMIT 10

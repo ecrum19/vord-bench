@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Set up vord-bench: build the Comunica fork, fetch and split WatDiv, load the stores,
-# start the endpoints, generate the engines and compute the ground truth.
+# start the endpoints, generate the engines and queries, and compute the ground truth.
 # Steps whose output already exists are skipped, so the script can be re-run.
 #
 # Environment:
@@ -65,6 +65,9 @@ curl -fsS http://localhost:3099/health && echo
 
 step "Engines"
 node harness/generate-engines.mjs
+
+step "Queries"
+node harness/generate-queries.mjs
 
 step "Ground truth"
 node harness/ground-truth.mjs

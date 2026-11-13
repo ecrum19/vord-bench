@@ -2,7 +2,9 @@
   "description": "A small subset for checking the setup: a few queries, the main profiles and engines, one replication.",
   "comunicaDir": "../comunica-vord",
   "queries": {
-    "dir": "data/generated/watdiv/queries",
+    "dir": "data/generated/queries",
+    "watdivDir": "data/generated/watdiv/queries",
+    "challengeDir": "data/challenge",
     "templates": [
       "L3",
       "S1",

@@ -1,0 +1,9 @@
+PREFIX wsdbm: <http://db.uwaterloo.ca/~galuc/wsdbm/>
+PREFIX rev: <http://purl.org/stuff/rev#>
+SELECT ?product ?review ?rating WHERE {
+	?product wsdbm:hasGenre wsdbm:SubGenre64 .
+	OPTIONAL {
+		?product rev:hasReview ?review .
+		?review rev:rating ?rating .
+	}
+}

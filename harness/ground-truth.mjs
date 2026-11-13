@@ -45,8 +45,10 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const summary = {};
   for (const { id, query } of queries) {
     const path = join(outDir, `${id}.json`);
-    if (existsSync(path) && !values.force) {
-      summary[id] = JSON.parse(readFileSync(path, 'utf8')).count;
+    const existing = existsSync(path) && !values.force ? JSON.parse(readFileSync(path, 'utf8')) : undefined;
+    // Regenerated queries keep their ID, so the ground truth is only reused for the same query.
+    if (existing?.query === query) {
+      summary[id] = existing.count;
       continue;
     }
     const start = performance.now();

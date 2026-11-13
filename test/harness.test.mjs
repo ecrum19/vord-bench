@@ -77,7 +77,7 @@ describe('queries', () => {
     assert.deepEqual(loadQueries(dir, { templates: [ 'S2' ], counts: {}}).map(query => query.id), [ 'S2-0' ]);
     assert.throws(() => loadQueries(dir, { templates: [ 'F9' ]}), /Unknown query template F9/u);
     assert.throws(() => loadQueries(join(dir, 'missing')), /does not exist/u);
-    assert.deepEqual([ 'C1', 'S10', 'L2', 'F1', 'S2' ].sort(compareTemplates), [ 'L2', 'S2', 'S10', 'F1', 'C1' ]);
+    assert.deepEqual([ 'X1', 'C1', 'S10', 'L2', 'F1', 'S2' ].sort(compareTemplates), [ 'L2', 'S2', 'S10', 'F1', 'C1', 'X1' ]);
   });
 });
 

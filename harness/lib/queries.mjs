@@ -44,10 +44,10 @@ export function loadQueries(dir, { templates, instances = 1, counts } = {}) {
 }
 
 /**
- * Order templates as WatDiv does: by class (L, S, F, C), then by number.
+ * Order templates as WatDiv does: by class (L, S, F, C), then by number, followed by the challenge queries (X).
  */
 export function compareTemplates(a, b) {
-  const order = 'LSFC';
+  const order = 'LSFCX';
   const classA = order.indexOf(a[0]);
   const classB = order.indexOf(b[0]);
   if (classA !== classB) {

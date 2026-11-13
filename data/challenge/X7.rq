@@ -1,0 +1,8 @@
+PREFIX wsdbm: <http://db.uwaterloo.ca/~galuc/wsdbm/>
+PREFIX sorg: <http://schema.org/>
+SELECT ?user ?product WHERE {
+	?user sorg:nationality wsdbm:Country5 .
+	{ ?user wsdbm:likes ?product . }
+	UNION
+	{ ?user wsdbm:makesPurchase ?purchase . ?purchase wsdbm:purchaseFor ?product . }
+}

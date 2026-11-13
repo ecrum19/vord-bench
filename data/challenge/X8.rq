@@ -1,0 +1,11 @@
+PREFIX wsdbm: <http://db.uwaterloo.ca/~galuc/wsdbm/>
+PREFIX gr: <http://purl.org/goodrelations/>
+PREFIX rev: <http://purl.org/stuff/rev#>
+PREFIX foaf: <http://xmlns.com/foaf/>
+SELECT ?offer ?product ?review ?user ?age WHERE {
+	wsdbm:Retailer99 gr:offers ?offer .
+	?offer gr:includes ?product .
+	?product rev:hasReview ?review .
+	?review rev:reviewer ?user .
+	?user foaf:age ?age .
+}

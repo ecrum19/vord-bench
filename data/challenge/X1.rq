@@ -1,0 +1,5 @@
+PREFIX rev: <http://purl.org/stuff/rev#>
+SELECT ?review ?rating ?title WHERE {
+	?review rev:rating ?rating .
+	?review rev:title ?title .
+}
