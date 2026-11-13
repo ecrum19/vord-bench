@@ -199,4 +199,13 @@ describe('vord-proxy', () => {
     assert.equal(health.run, 'stats');
     assert.deepEqual(health.profiles, [ ...PROFILES.keys() ]);
   });
+
+  it('starts a run with fresh statistics if its ID was used before', async() => {
+    await fetch(`${admin}/reset?run=again`, { method: 'POST' });
+    await select('a', 'rate');
+    await fetch(`${admin}/reset?run=again`, { method: 'POST' });
+    assert.deepEqual(await (await fetch(`${admin}/stats?run=again`)).json(), {
+      requests: 0, serviceDescriptions: 0, truncated: 0, byStatus: {}, byReason: {},
+    });
+  });
 });

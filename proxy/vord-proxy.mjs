@@ -230,6 +230,8 @@ export function createProxy({ endpoints, profiles, latencyMs = 0, log = () => {}
     if (req.method === 'POST' && url.pathname === '/reset') {
       states.clear();
       run = url.searchParams.get('run') ?? undefined;
+      // A run starts with fresh statistics, also if an earlier benchmark used the same run ID.
+      stats.delete(run ?? '');
       return send(res, 200, { 'content-type': 'application/json' }, JSON.stringify({ ok: true, run }));
     }
     if (req.method === 'GET' && url.pathname === '/stats') {
