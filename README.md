@@ -4,6 +4,8 @@ This benchmark measures whether Comunica queries endpoints that have restriction
 
 It compares engines built from the Comunica fork ([`ecrum19/comunica@feature/vord-restrictions`](https://github.com/ecrum19/comunica/tree/feature/vord-restrictions)) against dummy endpoints. The dummy endpoints describe their restrictions with VoRD and also enforce them.
 
+The [report](report/REPORT.md) describes the implementation, this setup, the exact VoRD terms tested, and the results of the run `full-2`. [PLAN.md](PLAN.md) lists the planned changes to the Comunica fork that follow from it.
+
 ## How it works
 
 ```
