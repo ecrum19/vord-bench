@@ -4,33 +4,29 @@ This benchmark measures whether Comunica queries endpoints that have restriction
 
 It compares engines built from the Comunica fork ([`ecrum19/comunica@feature/vord-restrictions`](https://github.com/ecrum19/comunica/tree/feature/vord-restrictions)) against dummy endpoints. The dummy endpoints describe their restrictions with VoRD and also enforce them.
 
-The [report](report/REPORT.md) describes the implementation, this setup, the exact VoRD terms tested, and the results of the run `full-2`. [PLAN.md](PLAN.md) lists the planned changes to the Comunica fork that follow from it.
+The [report](report/REPORT.md) describes the implementation, this setup, the exact VoRD terms tested, and the results of the run `full-2`. [PLAN.md](PLAN.md) lists the planned changes to the Comunica fork that follow from it. [PLAN-SUITES.md](PLAN-SUITES.md) plans a client-side restriction proxy and switchable benchmark suites (WatDiv, FedShop, LargeRDFBench and real-world queries).
 
 ## How it works
 
 ```
-harness (one Node process per run)
-   │  Comunica engine A/B/B′/C/D, fetch wrapped to record every request
+harness --suite <name> (one Node process per run)
+   │  Comunica engine A/B/B′/C/D, fetch wrapped to record every request and tag it with the run
    ▼
-vord-proxy :3000-3004 ── one port per endpoint; profile in the path: /<profile>/sparql
-   │  serves the service description and VoRD restrictions, enforces them, logs every request
+vord-proxy :3000-3004 ── one port per endpoint; profile (and description mode) in the path
+   │  emulation: describes and enforces the profile's restrictions
+   │  safety: protects real upstreams (rate, concurrency, budget, breaker, kill switch)
+   │  logs every request: emulated and upstream outcome, bytes, rows, waits
    ▼
-Oxigraph (read-only) ── all │ users │ products │ offers │ reviews
+upstream ── watdiv: Oxigraph (read-only) all │ users │ products │ offers │ reviews
 ```
+
+The harness runs a **suite**, which bundles the endpoints, data, queries, ground truth and run presets ([suites/](suites/)). The only suite so far is `watdiv`, described below. FedShop, LargeRDFBench and real-world queries are planned in [PLAN-SUITES.md](PLAN-SUITES.md).
 
 - **Data and queries.** The data is WatDiv at scale 10 (1.09M triples, from [comunica-performance-assets](https://github.com/comunica/comunica-performance-assets)). The queries are the WatDiv templates (L, S, F, C) and eight challenge queries (X), see [Queries](#queries).
   - [data/split.mjs](data/split.mjs) splits the dataset by subject type into 4 endpoints: `users`, `products`, `offers` and `reviews` ([data/partitions.json](data/partitions.json)).
   - Every triple ends up in exactly one partition, so the federated scenario has the same answers as the `all` endpoint.
 - **Scenarios.** In `single`, Comunica queries the `all` endpoint. In `federated`, it queries the 4 partitions.
-- **[vord-proxy](proxy/vord-proxy.mjs).** A small Node server with no dependencies.
-  - A request without a query gets the service description, including the profile's VoRD restrictions. Each profile is defined once in [profiles/](profiles/), and that file drives both what the proxy enforces and what clients read.
-  - It enforces the profile's hard restrictions:
-    - rate and quota limits, with a sliding window per client (429 with `Retry-After`)
-    - concurrency (503)
-    - evaluation time (503)
-    - result size, by truncation (`X-SPARQL-MaxRows`)
-  - Soft restrictions are only advertised, not enforced.
-  - Each endpoint has its own port, because Comunica's HTTP actors keep their state per host.
+- **[vord-proxy](proxy/vord-proxy.mjs).** A client-side Node server with no dependencies, which emulates restricted endpoints in front of any SPARQL endpoint. See [The proxy](#the-proxy).
 - **Ground truth.** Each query is evaluated directly on the unrestricted `all` store. A run is *complete* if it returns exactly these results, compared as a multiset.
 
 ### Queries
@@ -89,6 +85,8 @@ The engines are defined in [engines/engines.json](engines/engines.json). All of 
 | C-vord-http | B plus the VoRD extractor and `limit-restrictions`, with `restrictionAwarePlanning: false` |
 | D-vord-full | B plus VoRD in the HTTP layer and in planning and execution: paging, request-time metadata and COUNT skipping |
 
+The fork can also read restrictions that users provide in the `endpointRestrictions` context entry. Only C and D, marked `providedRestrictions` in engines.json, have the actor that reads them. A, B and B′ replace it by the upstream context actors, and `generate-engines` checks every compiled engine for this, so that restrictions provided to the VoRD engines can never reach the regular ones.
+
 ### Measurements
 
 Each run is one query, with one engine, under one profile and scenario, in a fresh process. Before each run, the proxy's limiter state is reset. A run records:
@@ -99,14 +97,81 @@ Each run is one query, with one engine, under one profile and scenario, in a fre
 - HTTP requests by status and by host, as recorded on the client side, retries included
 - the proxy's view of the same run, including how many responses it truncated
 
-[harness/analyze.mjs](harness/analyze.mjs) aggregates the runs per profile, scenario and engine.
+[harness/analyze.mjs](harness/analyze.mjs) aggregates the runs per profile, scenario and engine (and description mode, if other modes were run).
+
+## The proxy
+
+[`proxy/vord-proxy.mjs`](proxy/vord-proxy.mjs) runs next to the query engine. Every federation member gets its own port, because Comunica's HTTP actors keep their state per host. The path selects the restriction profile and how the restrictions are described:
+
+| Path | Description mode |
+|---|---|
+| `/<profile>/sparql` | `advertised`: the service description lists the profile's VoRD restrictions |
+| `/<profile>/provided/sparql` | `provided`: the service description lists none; the restrictions are served as a VoRD file at `<admin>/vord/<profile>/<endpoint>.ttl`, which the harness passes to the VoRD engines in the `endpointRestrictions` context entry |
+| `/<profile>/none/sparql` | `none`: the restrictions are enforced but not described |
+
+Each profile is defined once in [profiles/](profiles/), and that file drives both what the proxy enforces and what clients read. A query passes through three layers:
+
+1. **Emulation** of the profile's hard restrictions, per client:
+   - rate and quota limits, with a sliding window (429 with `Retry-After`, or queueing)
+   - concurrency (503, or queueing)
+   - evaluation time (503)
+   - result size, by truncation (`X-SPARQL-MaxRows`) or rejection (413)
+
+   Soft restrictions are only described. A request that the emulation rejects never reaches the upstream.
+2. **Safety**, per upstream host, for real endpoints: a rate (requests wait, up to a maximum), a concurrency cap, a budget of requests, a breaker that opens after repeated 403, 429 or 5xx responses, and a kill switch. Refusals are 503 with `X-Vord-Proxy-Safety`, and are logged separately from the emulated restrictions. The harness stops a campaign when a breaker opens or the kill switch is on.
+3. **Upstream**: GET or POST, with configured headers (such as a User-Agent), a default graph per member, and the emulated evaluation time as a timeout parameter if the upstream accepts one. Responses stream through a scanner that counts the results (SPARQL JSON, XML, TSV, CSV, N-Triples) and cuts them off at the result limit, so that the rest is not read. A response is held back only while its outcome can still change (a result limit, a timeout or recording).
+
+Optionally, the proxy **records** upstream responses, and **replays** them with their recorded latency (`--record <dir>`, `--replay <dir>`). Replays are for debugging and for estimating client-side variance, not for primary results.
+
+Every request is logged to `results/proxy/requests.jsonl` with: the run (from the `x-vord-bench-run` header that the harness sets on every request), the endpoint, profile and description mode, the emulated outcome (status, reason, truncation), the upstream outcome (status, latency, bytes), the bytes sent to the client, the result rows, the time queued by the emulation and by the safety layer, and the violations of the upstream's published policy (`policy`, the politeness metric).
+
+The endpoints file of a suite configures the proxy. For the `watdiv` suite ([suites/watdiv/endpoints.json](suites/watdiv/endpoints.json)), each endpoint only names its upstream store. An upstream can also be configured in full:
+
+```json
+{
+  "adminPort": 3099,
+  "upstreams": {
+    "uniprot": {
+      "url": "https://sparql.uniprot.org/sparql",
+      "method": "GET",
+      "headers": { "User-Agent": "vord-bench/0.2 (+https://github.com/ecrum19/vord-bench)" },
+      "timeoutParameter": { "name": "timeout", "value": "{ms}" },
+      "serviceDescription": "passthrough",
+      "policy": { "source": "<where the policy is published>", "retrieved": "2026-11-18", "restrictions": [ ] },
+      "safety": {
+        "rate": { "maxValue": 1, "windowDuration": "PT1S" },
+        "concurrency": 2,
+        "budget": 5000,
+        "maxWaitMs": 60000,
+        "breaker": { "statuses": [ 403, 429, "5xx" ], "threshold": 5, "windowDuration": "PT1M" }
+      }
+    }
+  },
+  "endpoints": {
+    "uniprot": { "port": 3010, "upstream": "uniprot", "aliases": [ "https://sparql.uniprot.org/sparql/" ] },
+    "vendor0": { "port": 3100, "upstream": "http://virtuoso:8890/sparql", "defaultGraph": "http://www.vendor0.fr/" }
+  },
+  "requireSafety": true
+}
+```
+
+- `policy.restrictions` are written like the restrictions of a profile. They are not enforced, only checked, for the politeness metric.
+- `safety` requires a `User-Agent` header. With `requireSafety`, every upstream must have safety limits. Upstreams on the same host must have the same limits, which they share.
+- `serviceDescription: "passthrough"` serves the upstream's own service description in the `provided` and `none` modes.
+- `aliases` are other URLs of the same endpoint, which map to the same member.
+
+The admin port has:
+- `POST /reset?run=<id>` and `GET /stats?run=<id>`
+- `GET /health`
+- `GET /vord/<profile>/<endpoint>.ttl`
+- `GET /safety`, `POST /safety/kill`, `POST /safety/resume` and `POST /safety/close[?host=<host>]`
 
 ## Running
 
 The setup requires Docker with Compose, Node 20 or later, git, curl and unzip.
 
 ```bash
-npm run setup          # fork build, data, stores, endpoints, engines, queries, ground truth (idempotent)
+npm run setup          # watdiv: fork build, data, stores, endpoints, engines, queries, ground truth (idempotent)
 npm test               # unit tests; with the fork built, also checks how the fork reads the proxy's descriptions
 npm run bench:dry      # prints the run matrix and checks that everything is in place
 npm run bench:smoke    # a small subset: 4 queries x 4 profiles x 4 engines, with request traces
@@ -114,6 +179,16 @@ npm run bench -- --name full-1
 npm run analyze -- results/full-1
 npm run plot -- results/full-1   # figures in results/full-1/figures/ (needs Python 3 with matplotlib)
 ```
+
+The endpoints of the `watdiv` suite are started with `docker compose -f suites/watdiv/docker-compose.yml up -d` (the setup does this). Two checks belong to every change of the proxy or the harness:
+
+```bash
+npm run overhead                                         # proxy overhead: direct versus proxied under P0
+npm run bench:regression -- --name regression-1          # P0, P1, P3 and P7 with all queries and engines
+npm run compare -- results/regression-1 results/full-2   # same outcomes per run as full-2?
+```
+
+The overhead check passes if every query gives identical results directly and through the proxy, with a median overhead of at most 10 ms or 10% of the direct time. The comparison passes if every run has an outcome (complete, incomplete, wrong, timeout or error) that the reference had in one of its replications.
 
 The `setup` script reads these environment variables:
 
@@ -125,7 +200,8 @@ The `setup` script reads these environment variables:
 
 `harness/run.mjs` takes these options:
 
-- selection: `--profiles`, `--scenarios`, `--engines`, `--templates`, `--instances`, `--replications`
+- `--suite <name>` (default `watdiv`) and `--preset <name>`: the presets of the `watdiv` suite are `full` (the default), `smoke`, `regression` and `descriptions` (C and D with advertised and provided restrictions)
+- selection: `--profiles`, `--scenarios`, `--engines`, `--descriptions`, `--templates`, `--instances`, `--replications`. Description modes other than `advertised` only apply to the engines marked `providedRestrictions` in [engines/engines.json](engines/engines.json)
 - `--timeout <ms>`
 - `--trace`, which writes every request to `results/<name>/traces/`
 - `--resume`, which continues an interrupted benchmark
@@ -136,12 +212,10 @@ The proxy also writes every request to `results/proxy/requests.jsonl`, tagged wi
 
 | Path | Contents |
 |---|---|
-| `bench.config.json`, `bench.smoke.json` | The run matrix and its settings |
-| `docker-compose.yml`, `endpoints.json` | Oxigraph stores and the proxy |
-| `profiles/` | The restriction profiles |
-| `proxy/` | vord-proxy |
+| `suites/<name>/` | A suite: `suite.json` (queries, sources, ground truth, presets of the run matrix), the proxy's endpoints file, and its setup. `suites/watdiv/` also has the Docker Compose file of the stores and the proxy |
+| `profiles/` | The restriction profiles, shared by the suites |
+| `proxy/` | vord-proxy and its layers: emulation, safety, the upstream adapter, streaming scanners, recording and the policy check |
 | `engines/` | Engine definitions. Generated configs and compiled engines go in `engines/generated/` |
 | `data/` | The split script, partition map and challenge queries. Downloads, partitions, generated queries and stores go in `data/generated/` and `data/stores/` |
-| `harness/` | Engine and query generation, ground truth, the runner, the per-run worker, the analysis and the plots |
-| `scripts/` | Setup |
+| `harness/` | Engine and query generation, ground truth, the runner, the per-run worker, the analysis and the plots, the overhead check and the regression comparison |
 | `test/` | Tests (`node --test`) |

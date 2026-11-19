@@ -2,14 +2,19 @@
 /**
  * Generate the Components.js config of every engine in engines/engines.json from the Comunica fork's
  * default config, and compile each config into a module, so that runs do not instantiate configs themselves.
- * Usage: node harness/generate-engines.mjs [--config bench.config.json] [--no-compile]
+ * Usage: node harness/generate-engines.mjs [--suite watdiv] [--no-compile]
+ *
+ * Engine isolation: only engines with providedRestrictions in engines.json may contain the context actor that reads
+ * the endpointRestrictions context entry; the others remove it with replaceImports. The compiled engines are checked
+ * for this, so that restrictions provided to the VoRD engines can never reach the regular ones.
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
-import { fromRoot, loadBenchConfig, readJson } from './lib/config.mjs';
+import { fromRoot, readJson } from './lib/config.mjs';
+import { loadSuite } from './lib/suites.mjs';
 
 const CONTEXTS = [
   'https://linkedsoftwaredependencies.org/bundles/npm/componentsjs/^6.0.0/components/context.jsonld',
@@ -37,14 +42,33 @@ export function buildEngineConfig(baseConfig, engine) {
   };
 }
 
+/**
+ * The package of the context actor that reads provided restrictions.
+ */
+export const PROVIDED_RESTRICTIONS_ACTOR = '@comunica/actor-context-preprocess-endpoint-restrictions';
+
+/**
+ * Check that a compiled engine contains the actor that reads provided restrictions if and only if it should.
+ * @param {string} id
+ * @param {{ providedRestrictions?: boolean }} engine
+ * @param {string} compiled The compiled engine module.
+ */
+export function checkIsolation(id, engine, compiled) {
+  const contains = compiled.includes(PROVIDED_RESTRICTIONS_ACTOR);
+  if (contains !== Boolean(engine.providedRestrictions)) {
+    throw new Error(`Engine ${id} ${contains ? 'reads' : 'does not read'} provided restrictions, but its definition says ` +
+      `providedRestrictions: ${Boolean(engine.providedRestrictions)}`);
+  }
+}
+
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const { values } = parseArgs({
     options: {
-      config: { type: 'string', default: 'bench.config.json' },
+      suite: { type: 'string', default: 'watdiv' },
       'no-compile': { type: 'boolean', default: false },
     },
   });
-  const config = loadBenchConfig(values.config);
+  const config = loadSuite(values.suite);
   const definitions = readJson('engines/engines.json');
   const basePath = join(config.comunicaDir, definitions.baseConfig);
   if (!existsSync(basePath)) {
@@ -75,9 +99,16 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
       ], { cwd: join(config.comunicaDir, 'engines/query-sparql'), encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
       compiledPath = join(outDir, `${id}.cjs`);
       writeFileSync(compiledPath, compiled);
+      checkIsolation(id, engine, compiled);
       process.stdout.write('done\n');
     }
-    manifest.engines[id] = { label: engine.label, config: configPath, compiled: compiledPath, context: engine.context ?? {} };
+    manifest.engines[id] = {
+      label: engine.label,
+      config: configPath,
+      compiled: compiledPath,
+      context: engine.context ?? {},
+      providedRestrictions: Boolean(engine.providedRestrictions),
+    };
   }
   writeFileSync(join(outDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   process.stdout.write(`Generated ${Object.keys(manifest.engines).length} engines for ${manifest.comunicaBranch}@${manifest.comunicaCommit.slice(0, 9)}\n`);

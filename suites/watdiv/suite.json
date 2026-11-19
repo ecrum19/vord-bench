@@ -1,0 +1,92 @@
+{
+  "name": "watdiv",
+  "description": "The small suite: WatDiv scale 10 (1.09 M triples) split over four endpoints on local Oxigraph stores, plus the full dataset as one endpoint. COMUNICA_DIR overrides comunicaDir (relative paths are relative to the repository root).",
+  "size": "small",
+  "comunicaDir": "../comunica-vord",
+  "compose": "suites/watdiv/docker-compose.yml",
+  "setup": "suites/watdiv/setup.sh",
+  "proxy": {
+    "baseUrl": "http://localhost",
+    "adminUrl": "http://localhost:3099",
+    "endpointsFile": "suites/watdiv/endpoints.json"
+  },
+  "queries": {
+    "reader": "watdiv",
+    "dir": "data/generated/queries",
+    "watdivDir": "data/generated/watdiv/queries",
+    "challengeDir": "data/challenge",
+    "preferNonEmpty": true
+  },
+  "sources": {
+    "strategy": "scenarios",
+    "scenarios": {
+      "single": [ "all" ],
+      "federated": [ "users", "products", "offers", "reviews" ]
+    }
+  },
+  "groundTruth": {
+    "strategy": "compute",
+    "endpoint": "http://localhost:7878/query",
+    "dir": "data/generated/ground-truth"
+  },
+  "profiles": [ "P0-none", "P1-rate", "P2-burst", "P3-truncate", "P4-concurrency", "P5-timeout", "P6-combined", "P7-mixed", "P8-unadvertised" ],
+  "defaultPreset": "full",
+  "presets": {
+    "full": {
+      "description": "The full benchmark, as run for full-2.",
+      "templates": [],
+      "instances": 1,
+      "profiles": [ "P0-none", "P1-rate", "P2-burst", "P3-truncate", "P4-concurrency", "P5-timeout", "P6-combined", "P7-mixed", "P8-unadvertised" ],
+      "engines": [ "A-naive", "B-backoff", "Bp-backoff-eager", "C-vord-http", "D-vord-full" ],
+      "descriptions": [ "advertised" ],
+      "replications": 3,
+      "timeoutMs": 300000,
+      "warmup": true,
+      "pauseMs": 200,
+      "maxMemoryMb": 4096,
+      "trace": false
+    },
+    "smoke": {
+      "description": "A small subset for checking the setup: a few queries, the main profiles and engines, one replication.",
+      "templates": [ "L3", "S1", "F5", "C3" ],
+      "instances": 1,
+      "profiles": [ "P0-none", "P1-rate", "P3-truncate", "P7-mixed" ],
+      "engines": [ "A-naive", "B-backoff", "C-vord-http", "D-vord-full" ],
+      "descriptions": [ "advertised" ],
+      "replications": 1,
+      "timeoutMs": 120000,
+      "warmup": false,
+      "pauseMs": 200,
+      "maxMemoryMb": 4096,
+      "trace": true
+    },
+    "regression": {
+      "description": "The regression check of the suite refactoring (PLAN-SUITES.md, section 3.1): the full-2 queries and engines under P0, P1, P3 and P7, one replication. Compare it with full-2 using harness/compare.mjs.",
+      "templates": [],
+      "instances": 1,
+      "profiles": [ "P0-none", "P1-rate", "P3-truncate", "P7-mixed" ],
+      "engines": [ "A-naive", "B-backoff", "Bp-backoff-eager", "C-vord-http", "D-vord-full" ],
+      "descriptions": [ "advertised" ],
+      "replications": 1,
+      "timeoutMs": 300000,
+      "warmup": true,
+      "pauseMs": 200,
+      "maxMemoryMb": 4096,
+      "trace": false
+    },
+    "descriptions": {
+      "description": "A check of the description modes (RQ4): the VoRD engines with advertised and provided restrictions, on a few queries.",
+      "templates": [ "L3", "S1", "F5", "C3", "X1", "X5" ],
+      "instances": 1,
+      "profiles": [ "P1-rate", "P3-truncate", "P6-combined", "P7-mixed" ],
+      "engines": [ "C-vord-http", "D-vord-full" ],
+      "descriptions": [ "advertised", "provided" ],
+      "replications": 1,
+      "timeoutMs": 300000,
+      "warmup": false,
+      "pauseMs": 200,
+      "maxMemoryMb": 4096,
+      "trace": false
+    }
+  }
+}

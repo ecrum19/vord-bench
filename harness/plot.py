@@ -73,7 +73,9 @@ def profile_label(profile):
 class Results:
     def __init__(self, directory):
         self.directory = Path(directory)
-        self.runs = [json.loads(line) for line in (self.directory / 'runs.jsonl').read_text().splitlines() if line]
+        runs = [json.loads(line) for line in (self.directory / 'runs.jsonl').read_text().splitlines() if line]
+        # The figures compare engines with advertised restrictions; other description modes are left out.
+        self.runs = [run for run in runs if run.get('description', 'advertised') == 'advertised']
         selection = json.loads((self.directory / 'setup.json').read_text())['selection']
         present = {(run['profile'], run['scenario'], run['engine'], run['query']) for run in self.runs}
         self.profiles = [p for p in selection['profiles'] if any(key[0] == p for key in present)]

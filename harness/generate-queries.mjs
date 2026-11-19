@@ -2,7 +2,7 @@
 /**
  * Generate the benchmark queries: WatDiv templates instantiated with values that give results,
  * and the challenge queries.
- * Usage: node harness/generate-queries.mjs [--config bench.config.json] [--instances 5]
+ * Usage: node harness/generate-queries.mjs [--suite watdiv] [--instances 5]
  * Reads the WatDiv queries (queries.watdivDir) and challenge queries (queries.challengeDir),
  * evaluates candidate values on the unrestricted store of the full dataset (groundTruth.endpoint),
  * and writes the queries and a manifest (instances.json) to queries.dir.
@@ -11,9 +11,10 @@ import { copyFileSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSy
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
-import { fromRoot, loadBenchConfig } from './lib/config.mjs';
+import { fromRoot } from './lib/config.mjs';
 import { instantiateTemplate } from './lib/instantiate.mjs';
 import { compareTemplates, splitQueries } from './lib/queries.mjs';
+import { loadSuite } from './lib/suites.mjs';
 
 /**
  * Evaluate a SELECT query on a SPARQL endpoint, and return its result bindings.
@@ -46,11 +47,14 @@ export async function countResults(endpoint, query) {
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const { values } = parseArgs({
     options: {
-      config: { type: 'string', default: 'bench.config.json' },
+      suite: { type: 'string', default: 'watdiv' },
       instances: { type: 'string', default: '5' },
     },
   });
-  const config = loadBenchConfig(values.config);
+  const config = loadSuite(values.suite);
+  if (config.queries.reader !== 'watdiv') {
+    throw new Error(`Suite ${config.suite} does not generate WatDiv queries`);
+  }
   const endpoint = config.groundTruth.endpoint;
   const watdivDir = fromRoot(config.queries.watdivDir);
   const challengeDir = fromRoot(config.queries.challengeDir);

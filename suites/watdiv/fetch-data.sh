@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Fetch WatDiv (scale 10, from comunica-performance-assets) and split it into the endpoint partitions.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+# Paths are relative to the repository root.
+cd "$(dirname "$0")/../.."
 WATDIV=data/generated/watdiv
 PARTITIONS=data/generated/partitions
 URL=${WATDIV_URL:-https://github.com/comunica/comunica-performance-assets/raw/master/watdiv-10.zip}

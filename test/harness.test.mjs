@@ -1,15 +1,20 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { once } from 'node:events';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import { createPartitioner, split } from '../data/split.mjs';
 import { aggregate, formatRows, groupBy } from '../harness/analyze.mjs';
-import { buildEngineConfig } from '../harness/generate-engines.mjs';
+import { compareRuns, formatComparison, outcome } from '../harness/compare.mjs';
+import { PROVIDED_RESTRICTIONS_ACTOR, buildEngineConfig, checkIsolation } from '../harness/generate-engines.mjs';
 import { ResultMatcher, bindingsKey, jsonRowKey, jsonTermKey, termKey } from '../harness/lib/canonical.mjs';
 import { compareTemplates, loadQueries, splitQueries } from '../harness/lib/queries.mjs';
+import { listSuites, loadSuite } from '../harness/lib/suites.mjs';
+import { passes, pickQueries } from '../harness/overhead.mjs';
 import { createRecordingFetch, summarizeRequests } from '../harness/run-query.mjs';
-import { buildPlan, sourcesFor } from '../harness/run.mjs';
+import { buildPlan, providedRestrictions, runIdOf, sourcesFor } from '../harness/run.mjs';
 
 const XSD = 'http://www.w3.org/2001/XMLSchema#';
 const namedNode = value => ({ termType: 'NamedNode', value });
@@ -131,9 +136,69 @@ describe('engine generation', () => {
     assert.deepEqual(Object.keys(engines), [ 'A-naive', 'B-backoff', 'Bp-backoff-eager', 'C-vord-http', 'D-vord-full' ]);
     const originals = new Set(Object.values(engines).flatMap(engine => Object.keys(engine.replaceImports ?? {})));
     assert.deepEqual([ ...originals ].sort(), [
+      'ccqs:config/context-preprocess/actors-v5-4-1.json',
       'ccqs:config/http/actors-v5-4-1.json',
       'ccqs:config/rdf-metadata-extract/actors-v5-4-1.json',
     ]);
+  });
+
+  it('keeps provided restrictions away from the regular engines', () => {
+    const engines = JSON.parse(readFileSync(new URL('../engines/engines.json', import.meta.url), 'utf8')).engines;
+    const base = { import: [ 'ccqs:config/context-preprocess/actors-v5-4-1.json', 'ccqs:config/http/actors-v5-4-1.json', 'ccqs:config/rdf-metadata-extract/actors-v5-4-1.json' ]};
+    for (const [ id, engine ] of Object.entries(engines)) {
+      const imports = buildEngineConfig(base, engine).import;
+      assert.equal(imports.includes('ccqs:config/context-preprocess/actors-v5-4-1.json'), Boolean(engine.providedRestrictions), id);
+      assert.equal(imports.includes('ccqs:config/context-preprocess/actors.json'), !engine.providedRestrictions, id);
+    }
+    assert.deepEqual(Object.keys(engines).filter(id => engines[id].providedRestrictions), [ 'C-vord-http', 'D-vord-full' ]);
+  });
+
+  it('checks compiled engines for the actor that reads provided restrictions', () => {
+    const withActor = `require("${PROVIDED_RESTRICTIONS_ACTOR}")`;
+    checkIsolation('C', { providedRestrictions: true }, withActor);
+    checkIsolation('A', {}, 'require("@comunica/actor-context-preprocess-convert-shortcuts")');
+    assert.throws(() => checkIsolation('A', {}, withActor), /A reads provided restrictions/u);
+    assert.throws(() => checkIsolation('C', { providedRestrictions: true }, ''), /C does not read provided restrictions/u);
+  });
+
+  it('checks the compiled engines, if they have been generated', { skip: !existsSync(new URL('../engines/generated/manifest.json', import.meta.url)) && 'no generated engines' }, () => {
+    const manifest = JSON.parse(readFileSync(new URL('../engines/generated/manifest.json', import.meta.url), 'utf8'));
+    for (const [ id, engine ] of Object.entries(manifest.engines)) {
+      if (engine.compiled && existsSync(engine.compiled)) {
+        checkIsolation(id, engine, readFileSync(engine.compiled, 'utf8'));
+      }
+    }
+  });
+});
+
+describe('suites', () => {
+  it('lists the suites', () => {
+    assert.deepEqual(listSuites(), [ 'watdiv' ]);
+  });
+
+  it('loads the presets of the watdiv suite with the settings of the earlier configs', () => {
+    const full = loadSuite('watdiv');
+    assert.equal(full.preset, 'full');
+    assert.deepEqual(full.profiles, [ 'P0-none', 'P1-rate', 'P2-burst', 'P3-truncate', 'P4-concurrency', 'P5-timeout', 'P6-combined', 'P7-mixed', 'P8-unadvertised' ]);
+    assert.deepEqual(full.engines, [ 'A-naive', 'B-backoff', 'Bp-backoff-eager', 'C-vord-http', 'D-vord-full' ]);
+    assert.deepEqual({ replications: full.replications, timeoutMs: full.timeoutMs, warmup: full.warmup, pauseMs: full.pauseMs, maxMemoryMb: full.maxMemoryMb, trace: full.trace },
+      { replications: 3, timeoutMs: 300_000, warmup: true, pauseMs: 200, maxMemoryMb: 4096, trace: false });
+    assert.deepEqual(full.queries.templates, []);
+    assert.deepEqual(full.endpoints.users, { port: 3001, upstream: 'http://oxigraph-users:7878/query' });
+    const smoke = loadSuite('watdiv', 'smoke');
+    assert.deepEqual(smoke.queries.templates, [ 'L3', 'S1', 'F5', 'C3' ]);
+    assert.deepEqual({ replications: smoke.replications, timeoutMs: smoke.timeoutMs, warmup: smoke.warmup, trace: smoke.trace },
+      { replications: 1, timeoutMs: 120_000, warmup: false, trace: true });
+    const regression = loadSuite('watdiv', 'regression');
+    assert.deepEqual(regression.profiles, [ 'P0-none', 'P1-rate', 'P3-truncate', 'P7-mixed' ]);
+    assert.equal(regression.replications, 1);
+    assert.deepEqual(loadSuite('watdiv', 'descriptions').descriptions, [ 'advertised', 'provided' ]);
+  });
+
+  it('explains unknown and planned suites and presets', () => {
+    assert.throws(() => loadSuite('fedshop'), /planned but not implemented yet \(phase 3/u);
+    assert.throws(() => loadSuite('nope'), /Unknown suite nope; available: watdiv/u);
+    assert.throws(() => loadSuite('watdiv', 'nope'), /Unknown preset nope of suite watdiv/u);
   });
 });
 
@@ -154,18 +219,54 @@ describe('run plan', () => {
     ]);
     assert.equal(plan.filter(run => run.profile === 'P7' && run.scenario === 'single').length, 0);
     assert.equal(new Set(plan.map(run => run.runId)).size, plan.length);
+    assert.equal(plan[0].runId, 'P1__single__L1-0__r0__A', 'run IDs are those of earlier benchmarks');
+    assert.ok(plan.every(run => run.description === 'advertised'));
   });
 
-  it('builds source URLs per endpoint and profile', () => {
-    const config = {
-      proxy: { baseUrl: 'http://localhost' },
-      scenarios: { federated: [ 'users', 'reviews' ]},
-      endpoints: { users: { port: 3001 }, reviews: { port: 3004 }},
-    };
+  it('runs other description modes for the VoRD engines only', () => {
+    const plan = buildPlan({
+      profiles: [{ id: 'P1' }],
+      scenarios: [ 'federated' ],
+      engines: [ 'B', 'D' ],
+      queries: [{ id: 'L1-0' }],
+      replications: 1,
+      descriptions: [ 'advertised', 'provided' ],
+      vordEngines: new Set([ 'D' ]),
+    });
+    assert.deepEqual(plan.map(run => run.runId), [
+      'P1__federated__L1-0__r0__B',
+      'P1__federated__L1-0__r0__D',
+      'P1__federated__L1-0__r0__D__provided',
+    ]);
+    assert.equal(runIdOf({ profile: 'P', scenario: 's', queryId: 'q', rep: 2, engine: 'E', description: 'none' }), 'P__s__q__r2__E__none');
+  });
+
+  const config = {
+    proxy: { baseUrl: 'http://localhost', adminUrl: 'http://localhost:3099' },
+    sources: { strategy: 'scenarios', scenarios: { federated: [ 'users', 'reviews' ]}},
+    endpoints: { users: { port: 3001 }, reviews: { port: 3004 }},
+  };
+
+  it('builds source URLs per endpoint, profile and description mode', () => {
     assert.deepEqual(sourcesFor(config, 'federated', 'P1-rate'), [
       'http://localhost:3001/P1-rate/sparql',
       'http://localhost:3004/P1-rate/sparql',
     ]);
+    assert.deepEqual(sourcesFor(config, 'federated', 'P1-rate', 'provided'), [
+      'http://localhost:3001/P1-rate/provided/sparql',
+      'http://localhost:3004/P1-rate/provided/sparql',
+    ]);
+  });
+
+  it('provides restrictions as VoRD files on the proxy, for the provided mode only', () => {
+    const mixed = { id: 'P7-mixed', endpoints: { users: [{ id: 'rate', type: 'RateRestriction' }], reviews: []}};
+    assert.deepEqual(providedRestrictions(config, 'federated', mixed, 'provided'), {
+      'http://localhost:3001/P7-mixed/provided/sparql': 'http://localhost:3099/vord/P7-mixed/users.ttl',
+      'http://localhost:3004/P7-mixed/provided/sparql': [],
+    });
+    assert.equal(providedRestrictions(config, 'federated', mixed, 'advertised'), undefined);
+    const unadvertised = { id: 'P8', advertise: false, restrictions: [{ id: 'rate', type: 'RateRestriction' }]};
+    assert.deepEqual(Object.values(providedRestrictions(config, 'federated', unadvertised, 'provided')), [[], []]);
   });
 });
 
@@ -185,6 +286,72 @@ describe('request recording', () => {
     const { recordingFetch, requests } = createRecordingFetch(() => 0);
     await assert.rejects(recordingFetch('http://127.0.0.1:9/sparql?query=x'));
     assert.deepEqual(requests.map(({ host, kind, status }) => ({ host, kind, status })), [{ host: '127.0.0.1:9', kind: 'query', status: 'failed' }]);
+  });
+
+  it('tags every request with the run, keeping the other headers', async() => {
+    const seen = [];
+    const server = createServer((req, res) => {
+      seen.push(req.headers);
+      res.end('ok');
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    try {
+      const { recordingFetch } = createRecordingFetch(() => 0, { header: 'x-vord-bench-run', runId: 'run-1' });
+      const url = `http://127.0.0.1:${server.address().port}/sparql`;
+      await recordingFetch(url, { headers: new Headers({ accept: 'text/turtle' }) });
+      await recordingFetch(new Request(url, { headers: { accept: 'application/json' }}));
+      assert.deepEqual(seen.map(headers => [ headers['x-vord-bench-run'], headers.accept ]), [[ 'run-1', 'text/turtle' ], [ 'run-1', 'application/json' ]]);
+    } finally {
+      server.close();
+    }
+  });
+});
+
+describe('regression comparison', () => {
+  const run = (fields) => ({ profile: 'P1', scenario: 'f', query: 'L1-0', engine: 'A', status: 'ok', recall: 1, precision: 1, timeMs: 100, ...fields });
+
+  it('classifies outcomes', () => {
+    assert.equal(outcome(run({})), 'complete');
+    assert.equal(outcome(run({ recall: 0.5 })), 'incomplete');
+    assert.equal(outcome(run({ recall: 0.5, precision: 0.9 })), 'wrong');
+    assert.equal(outcome(run({ status: 'timeout' })), 'timeout');
+    assert.equal(outcome(run({ status: 'killed' })), 'timeout');
+    assert.equal(outcome(run({ status: 'crashed' })), 'error');
+  });
+
+  it('accepts any outcome of the reference replications, and reports differences and missing runs', () => {
+    const reference = [
+      run({ rep: 0 }), run({ rep: 1, status: 'timeout' }),
+      run({ engine: 'B', rep: 0, timeMs: 200 }), run({ engine: 'B', rep: 1, timeMs: 400 }),
+    ];
+    const comparison = compareRuns([
+      run({ status: 'timeout' }),
+      run({ engine: 'B', recall: 0.5 }),
+      run({ engine: 'C' }),
+      run({ engine: 'B', query: 'L2-0' }),
+    ], reference);
+    assert.deepEqual(comparison.rows.map(row => row.verdict), [ 'agrees', 'differs', 'missing', 'missing' ]);
+    assert.deepEqual([ comparison.agrees, comparison.differs, comparison.missing, comparison.unstable ], [ 1, 1, 2, 1 ]);
+    const same = compareRuns([ run({ engine: 'B', timeMs: 150 }) ], reference);
+    assert.deepEqual(same.timeRatio, { B: 0.5 });
+    assert.match(formatComparison('new', 'old', comparison), /\| P1 \/ f \/ L1-0 \/ B \/ advertised \| incomplete \| complete \|/u);
+  });
+});
+
+describe('overhead check', () => {
+  it('picks queries from the largest result to the smallest, at the quartiles', () => {
+    const queries = [ 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'empty' ].map(id => ({ id }));
+    const counts = { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7, h: 8, i: 9, empty: 0 };
+    assert.deepEqual(pickQueries(queries, counts, 5).map(query => query.id), [ 'i', 'g', 'e', 'c', 'a' ]);
+    assert.deepEqual(pickQueries(queries, counts, 1).map(query => query.id), [ 'i' ]);
+  });
+
+  it('passes queries with identical results and a small overhead', () => {
+    assert.equal(passes({ identical: true, directMs: 20, overheadMs: 9 }), true);
+    assert.equal(passes({ identical: true, directMs: 500, overheadMs: 45 }), true);
+    assert.equal(passes({ identical: true, directMs: 500, overheadMs: 60 }), false);
+    assert.equal(passes({ identical: false, directMs: 20, overheadMs: 0 }), false);
   });
 });
 

@@ -101,13 +101,28 @@ export class ConcurrencyGate {
 
   /**
    * Wait for a slot.
+   * @param {AbortSignal} [signal] Stops waiting, rejecting with the signal's reason.
    * @returns {Promise<void>}
    */
-  acquire() {
+  acquire(signal) {
+    if (signal?.aborted) {
+      return Promise.reject(signal.reason);
+    }
     if (this.tryAcquire()) {
       return Promise.resolve();
     }
-    return new Promise(resolve => this.waiting.push(resolve));
+    return new Promise((resolve, reject) => {
+      const waiter = () => {
+        signal?.removeEventListener('abort', onAbort);
+        resolve();
+      };
+      const onAbort = () => {
+        this.waiting.splice(this.waiting.indexOf(waiter), 1);
+        reject(signal.reason);
+      };
+      signal?.addEventListener('abort', onAbort, { once: true });
+      this.waiting.push(waiter);
+    });
   }
 
   release() {

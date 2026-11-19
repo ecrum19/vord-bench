@@ -34,14 +34,21 @@ export async function createEngine(job) {
 /**
  * Create a fetch function that records every request.
  * @param {() => number} elapsed
+ * @param {{ header?: string, runId?: string }} [tag] A request header that tags every request with the run,
+ *   so that the proxy attributes requests to runs without relying on its global state.
  */
-export function createRecordingFetch(elapsed) {
+export function createRecordingFetch(elapsed, { header, runId } = {}) {
   const requests = [];
   const recordingFetch = async(input, init) => {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
     const isQuery = url.searchParams.has('query') || Boolean(init?.body);
     const entry = { host: url.host, kind: isQuery ? 'query' : 'sd', start: elapsed() };
     requests.push(entry);
+    if (header && runId) {
+      const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+      headers.set(header, runId);
+      init = { ...init, headers };
+    }
     try {
       const response = await fetch(input, init);
       entry.status = response.status;
@@ -88,7 +95,7 @@ async function main() {
 
   let queryStart;
   const elapsed = () => performance.now() - queryStart;
-  const { recordingFetch, requests } = createRecordingFetch(elapsed);
+  const { recordingFetch, requests } = createRecordingFetch(elapsed, { header: job.runHeader, runId: job.runId });
   let ttfrMs;
   let finished = false;
 

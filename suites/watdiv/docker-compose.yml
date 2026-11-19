@@ -1,6 +1,9 @@
-# Dummy SPARQL endpoints: one read-only Oxigraph store per WatDiv partition (plus "all"),
+# The watdiv suite: one read-only Oxigraph store per WatDiv partition (plus "all"),
 # behind vord-proxy, which describes and enforces the restriction profiles.
-# Load the stores first with scripts/load-stores.sh.
+# Load the stores first with suites/watdiv/load-stores.sh. Paths are relative to this file.
+# The project keeps the name vord-bench, so that it replaces the containers of the earlier root-level setup.
+name: vord-bench
+
 x-oxigraph: &oxigraph
   image: ghcr.io/oxigraph/oxigraph:0.5.13
   user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
@@ -10,25 +13,25 @@ services:
   oxigraph-all:
     <<: *oxigraph
     command: serve-read-only --location /data --bind 0.0.0.0:7878
-    volumes: [ "./data/stores/all:/data:ro" ]
+    volumes: [ "../../data/stores/all:/data:ro" ]
     # Published for computing the ground truth directly, bypassing the proxy.
     ports: [ "127.0.0.1:7878:7878" ]
   oxigraph-users:
     <<: *oxigraph
     command: serve-read-only --location /data --bind 0.0.0.0:7878
-    volumes: [ "./data/stores/users:/data:ro" ]
+    volumes: [ "../../data/stores/users:/data:ro" ]
   oxigraph-products:
     <<: *oxigraph
     command: serve-read-only --location /data --bind 0.0.0.0:7878
-    volumes: [ "./data/stores/products:/data:ro" ]
+    volumes: [ "../../data/stores/products:/data:ro" ]
   oxigraph-offers:
     <<: *oxigraph
     command: serve-read-only --location /data --bind 0.0.0.0:7878
-    volumes: [ "./data/stores/offers:/data:ro" ]
+    volumes: [ "../../data/stores/offers:/data:ro" ]
   oxigraph-reviews:
     <<: *oxigraph
     command: serve-read-only --location /data --bind 0.0.0.0:7878
-    volumes: [ "./data/stores/reviews:/data:ro" ]
+    volumes: [ "../../data/stores/reviews:/data:ro" ]
 
   proxy:
     image: node:24.15.0-alpine
@@ -37,10 +40,10 @@ services:
     working_dir: /app
     command: node proxy/vord-proxy.mjs --config endpoints.json --profiles profiles --log /logs/requests.jsonl
     volumes:
-      - "./proxy:/app/proxy:ro"
-      - "./profiles:/app/profiles:ro"
+      - "../../proxy:/app/proxy:ro"
+      - "../../profiles:/app/profiles:ro"
       - "./endpoints.json:/app/endpoints.json:ro"
-      - "./results/proxy:/logs"
+      - "../../results/proxy:/logs"
     ports:
       - "127.0.0.1:3000-3004:3000-3004"
       - "127.0.0.1:3099:3099"
