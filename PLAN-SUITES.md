@@ -17,7 +17,7 @@ These are fixed before any campaign runs, so that the analysis is not tuned to t
 
 | | Question | Hypothesis |
 |---|---|---|
-| RQ1 | On large federations under emulated restrictions, does knowing the restrictions (engines C and D) give more complete and correct results than regular Comunica (A, B, B′)? | D ≥ C > B ≥ A in the share of complete runs under P1–P7. As in `full-2`, the VoRD engines give no silently wrong (truncated) results. |
+| RQ1 | On large federations under emulated restrictions, does knowing the restrictions (engines C and D) give more complete and correct results than regular Comunica (A, B, B′)? | D ≥ C > B ≥ A in the share of complete runs under P1–P7. As in `full-2`, D gives no silently wrong (truncated) results; C, which does not page, may. |
 | RQ2 | How does the effect change with the number of federation members? | The gap between B and C/D grows with the number of members, because source selection sends requests to every member and each member has its own rate limit. |
 | RQ3 | On real federated queries, do the VoRD engines stay within the endpoints' policies, and do they answer as completely as regular Comunica? | The VoRD engines have no rejected requests and no policy violations, and their completeness is at least that of B. |
 | RQ4 | Does it matter whether the restrictions are advertised in the service description or provided with `endpointRestrictions`? | No: C and D behave the same either way. This is a validity check of the new feature, not a finding. |
