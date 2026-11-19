@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Load the full dataset and each partition into its own Oxigraph store (data/stores/<name>).
-# Existing stores are kept, unless --force is given (stop the endpoints first: docker compose down).
+# Existing stores are kept, unless --force is given (stop the endpoints first: docker compose -f suites/watdiv/docker-compose.yml down).
 set -euo pipefail
-cd "$(dirname "$0")/.."
+# Paths are relative to the repository root.
+cd "$(dirname "$0")/../.."
 ROOT=$(pwd)
 IMAGE=ghcr.io/oxigraph/oxigraph:0.5.13
 FORCE=${1:-}

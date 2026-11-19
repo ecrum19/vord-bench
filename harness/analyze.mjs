@@ -88,9 +88,14 @@ function toMarkdown(rows) {
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const dir = resolve(process.argv[2] ?? '.');
   const runs = readFileSync(join(dir, 'runs.jsonl'), 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line));
-  const summary = groupBy(runs, [ 'profile', 'scenario', 'engine' ])
+  // Description modes are only a column if the benchmark used other modes than the advertised one.
+  const modes = runs.some(run => (run.description ?? 'advertised') !== 'advertised') ? [ 'description' ] : [];
+  for (const run of runs) {
+    run.description ??= 'advertised';
+  }
+  const summary = groupBy(runs, [ 'profile', 'scenario', 'engine', ...modes ])
     .map(({ keys, runs: group }) => ({ ...keys, ...aggregate(group) }));
-  const perQuery = groupBy(runs, [ 'profile', 'scenario', 'engine', 'query' ])
+  const perQuery = groupBy(runs, [ 'profile', 'scenario', 'engine', ...modes, 'query' ])
     .map(({ keys, runs: group }) => ({ ...keys, ...aggregate(group) }));
   writeFileSync(join(dir, 'summary.csv'), toCsv(summary));
   writeFileSync(join(dir, 'per-query.csv'), toCsv(perQuery));

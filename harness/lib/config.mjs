@@ -17,18 +17,6 @@ export function readJson(path) {
 }
 
 /**
- * Load a benchmark configuration.
- * The COMUNICA_DIR environment variable overrides the configured Comunica checkout.
- * @param {string} path
- */
-export function loadBenchConfig(path = 'bench.config.json') {
-  const config = readJson(path);
-  config.comunicaDir = resolve(ROOT, process.env.COMUNICA_DIR ?? config.comunicaDir);
-  config.endpoints = readJson(config.proxy.endpointsFile).endpoints;
-  return config;
-}
-
-/**
  * Get the path of the generated engine manifest, and check that it exists.
  */
 export function loadEngineManifest() {

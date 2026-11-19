@@ -56,7 +56,7 @@ export function validateProfile(profile, source = profile.id) {
   }
 }
 
-function validateRestriction(restriction, source) {
+export function validateRestriction(restriction, source) {
   if (!/^[\w-]+$/u.test(restriction.id ?? '')) {
     throw new Error(`${source}: every restriction needs a URL-safe id`);
   }

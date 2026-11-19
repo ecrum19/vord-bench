@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Set up vord-bench: build the Comunica fork, fetch and split WatDiv, load the stores,
+# Set up the watdiv suite of vord-bench: build the Comunica fork, fetch and split WatDiv, load the stores,
 # start the endpoints, generate the engines and queries, and compute the ground truth.
 # Steps whose output already exists are skipped, so the script can be re-run.
 #
@@ -10,7 +10,8 @@
 # Options:
 #   --force-stores reload the Oxigraph stores
 set -euo pipefail
-cd "$(dirname "$0")/.."
+# Paths are relative to the repository root.
+cd "$(dirname "$0")/../.."
 ROOT=$(pwd)
 COMUNICA_DIR=$(realpath -m "${COMUNICA_DIR:-$ROOT/../comunica-vord}")
 COMUNICA_REPO=${COMUNICA_REPO:-https://github.com/ecrum19/comunica.git}
@@ -44,17 +45,18 @@ fi
 echo "Built $(git -C "$COMUNICA_DIR" log --oneline -1)"
 
 step "WatDiv data"
-bash scripts/fetch-data.sh
+bash suites/watdiv/fetch-data.sh
 
 step "Oxigraph stores"
+COMPOSE=(docker compose -f suites/watdiv/docker-compose.yml)
 if [ -n "$FORCE_STORES" ]; then
-  docker compose down
+  "${COMPOSE[@]}" down
 fi
-bash scripts/load-stores.sh $FORCE_STORES
+bash suites/watdiv/load-stores.sh $FORCE_STORES
 
 step "Endpoints"
 mkdir -p results/proxy
-docker compose up -d
+"${COMPOSE[@]}" up -d
 for _ in $(seq 1 60); do
   if curl -fsS http://localhost:3099/health > /dev/null 2>&1 && curl -fsS 'http://localhost:7878/query?query=ASK%7B%7D' > /dev/null 2>&1; then
     break
@@ -64,13 +66,13 @@ done
 curl -fsS http://localhost:3099/health && echo
 
 step "Engines"
-node harness/generate-engines.mjs
+node harness/generate-engines.mjs --suite watdiv
 
 step "Queries"
-node harness/generate-queries.mjs
+node harness/generate-queries.mjs --suite watdiv
 
 step "Ground truth"
-node harness/ground-truth.mjs
+node harness/ground-truth.mjs --suite watdiv
 
 step "Done"
 echo "Check the setup with: npm run bench:dry, then npm run bench:smoke"

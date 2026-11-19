@@ -1,10 +1,13 @@
 {
-  "description": "Comunica engine configurations, derived from the fork's default config (baseConfig). replaceImports swaps imports of the base config; overrides are Components.js overrides; context is passed with every query. All engines run the same fork build, so they only differ in what is listed here.",
+  "description": "Comunica engine configurations, derived from the fork's default config (baseConfig). replaceImports swaps imports of the base config; overrides are Components.js overrides; context is passed with every query. All engines run the same fork build, so they only differ in what is listed here. providedRestrictions marks the engines that read restrictions provided in the endpointRestrictions context entry (the VoRD engines); the others replace the fork's context-preprocess actors by the upstream ones, so that provided restrictions can never reach them.",
   "baseConfig": "engines/config-query-sparql/config/config-default-v5-4-1.json",
   "engines": {
     "A-naive": {
       "label": "Naive: no rate limiter, no retries, no VoRD",
       "replaceImports": {
+        "ccqs:config/context-preprocess/actors-v5-4-1.json": [
+          "ccqs:config/context-preprocess/actors.json"
+        ],
         "ccqs:config/http/actors-v5-4-1.json": [
           "ccqs:config/http/actors-fetch-v5-1-3.json",
           "ccqs:config/http/actors-wayback.json"
@@ -18,6 +21,9 @@
     "B-backoff": {
       "label": "Comunica's current back-off: limit-rate and retries, no VoRD",
       "replaceImports": {
+        "ccqs:config/context-preprocess/actors-v5-4-1.json": [
+          "ccqs:config/context-preprocess/actors.json"
+        ],
         "ccqs:config/http/actors-v5-4-1.json": [
           "ccqs:config/http/actors-fetch-v5-1-3.json",
           "ccqs:config/http/actors-limit-rate-v5-4-1.json",
@@ -36,6 +42,9 @@
     "Bp-backoff-eager": {
       "label": "B with limit-rate active from the first request (limitByDefault, correctionMultiplier 0.3, failureMultiplier 1)",
       "replaceImports": {
+        "ccqs:config/context-preprocess/actors-v5-4-1.json": [
+          "ccqs:config/context-preprocess/actors.json"
+        ],
         "ccqs:config/http/actors-v5-4-1.json": [
           "ccqs:config/http/actors-fetch-v5-1-3.json",
           "ccqs:config/http/actors-limit-rate-v5-4-1.json",
@@ -74,6 +83,7 @@
     },
     "C-vord-http": {
       "label": "B plus VoRD at the HTTP layer only (restrictionAwarePlanning false)",
+      "providedRestrictions": true,
       "contexts": [
         "https://linkedsoftwaredependencies.org/bundles/npm/@comunica/actor-query-source-identify-hypermedia-sparql/^5.0.0/components/context.jsonld"
       ],
@@ -101,6 +111,7 @@
     },
     "D-vord-full": {
       "label": "B plus VoRD at the HTTP layer and in planning and execution (the fork's default)",
+      "providedRestrictions": true,
       "context": {
         "@comunica/bus-http:http-retry-count": 3,
         "@comunica/bus-http:http-retry-delay-fallback": 1000,

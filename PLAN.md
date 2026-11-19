@@ -1,6 +1,7 @@
 # Planned changes
 
 Changes to the Comunica fork ([`ecrum19/comunica@feature/vord-restrictions`](https://github.com/ecrum19/comunica/tree/feature/vord-restrictions)) that follow from the benchmark. They are planned only, not implemented. The evidence for each is in the [report](report/REPORT.md).
+The planned extension of the benchmark itself is in [PLAN-SUITES.md](PLAN-SUITES.md).
 
 ## 1. Count the requests of nested operations in join planning (X7)
 
