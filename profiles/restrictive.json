@@ -1,0 +1,30 @@
+{
+  "id": "restrictive",
+  "label": "Hard mode: every archetype, with only 5% of the endpoints open",
+  "description": "A mix of all archetypes, per block of 20 endpoints: the documented policies, usage budgets, identified access, zero tolerance, a tarpit, empty answers under pressure and a shared budget. Suites with fewer than 20 endpoints get the most common archetypes; use the archetype-<id> profiles to test each archetype alone.",
+  "mix": {
+    "blockSize": 20,
+    "seed": 1,
+    "shares": {
+      "open": 1,
+      "virtuoso-default": 2,
+      "dbpedia": 1,
+      "wikidata": 2,
+      "uniprot": 2,
+      "cdn-virtuoso": 1,
+      "nginx": 2,
+      "usage-tokens": 2,
+      "identified-email": 1,
+      "identified-agent": 1,
+      "zero-tolerance": 1,
+      "tarpit": 1,
+      "degrade-under-load": 2,
+      "shared-budget": 1
+    }
+  },
+  "seeds": [
+    1,
+    2,
+    3
+  ]
+}

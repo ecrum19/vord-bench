@@ -1,0 +1,36 @@
+{
+  "id": "shared-budget",
+  "code": "G",
+  "group": "adversarial",
+  "label": "an endpoint whose limit is shared with other users",
+  "description": "20 requests per second for all users together (vord:GlobalScope). Other users take a share that wanders between 0 and 75% of the limit, redrawn every 5 s and seeded, so that every engine meets the same load. Requests over the remaining share get 429 with Retry-After: 1.",
+  "basedOn": [
+    {
+      "source": "Shared public endpoints; VoRD vord:GlobalScope",
+      "url": "https://w3id.org/vord#GlobalScope",
+      "retrieved": "2026-11-20"
+    }
+  ],
+  "restrictions": [
+    {
+      "id": "rate",
+      "type": "RateRestriction",
+      "metric": "requestsPerWindow",
+      "maxValue": 20,
+      "windowDuration": "PT1S",
+      "unit": "COUNT",
+      "scope": "GlobalScope",
+      "enforcement": "RejectRequest",
+      "hardRestriction": true,
+      "returnsStatusCode": 429,
+      "retryAfterHint": "PT1S",
+      "httpSignalHeader": "retry-after",
+      "emulation": {
+        "background": {
+          "maxShare": 0.75,
+          "stepMs": 5000
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "id": "dbpedia",
+  "code": "V",
+  "group": "documented",
+  "label": "a tuned public Virtuoso (DBpedia)",
+  "description": "DBpedia's fair-use policy: 10,000 rows, 120 s anytime queries, 50 parallel connections and 100 requests per second with a burst of 120 per IP address. Requests beyond the burst get 503.",
+  "basedOn": [
+    {
+      "source": "DBpedia SPARQL endpoint fair use policy",
+      "url": "https://www.dbpedia.org/resources/sparql/",
+      "retrieved": "2026-11-20"
+    }
+  ],
+  "restrictions": [
+    {
+      "id": "results",
+      "type": "ResultSizeRestriction",
+      "metric": "resultBindings",
+      "maxValue": 10000,
+      "unit": "COUNT",
+      "scope": "PerRequest",
+      "enforcement": "TruncateResult",
+      "hardRestriction": true,
+      "httpSignalHeader": "x-sparql-maxrows"
+    },
+    {
+      "id": "timeout",
+      "type": "ResponseTimeRestriction",
+      "metric": "evaluationTime",
+      "maxValue": 120,
+      "unit": "SEC",
+      "scope": "PerRequest",
+      "enforcement": "TruncateResult",
+      "hardRestriction": true,
+      "returnsStatusCode": 200,
+      "httpSignalHeader": "x-sql-state",
+      "emulation": {
+        "degradedState": "S1TAT"
+      }
+    },
+    {
+      "id": "concurrency",
+      "type": "ConcurrentRequestsRestriction",
+      "metric": "concurrentRequests",
+      "maxValue": 50,
+      "unit": "COUNT",
+      "scope": "PerClientIP",
+      "enforcement": "RejectRequest",
+      "hardRestriction": true,
+      "returnsStatusCode": 503
+    },
+    {
+      "id": "rate",
+      "type": "RateRestriction",
+      "metric": "requestsPerWindow",
+      "maxValue": 100,
+      "windowDuration": "PT1S",
+      "unit": "COUNT",
+      "scope": "PerClientIP",
+      "enforcement": "QueueRequest",
+      "hardRestriction": true,
+      "returnsStatusCode": 503,
+      "emulation": {
+        "queueLimit": 120
+      }
+    }
+  ]
+}

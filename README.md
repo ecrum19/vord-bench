@@ -57,7 +57,16 @@ Ratings and prices are plain literals in WatDiv, so the challenge queries cast t
 
 ### Restriction profiles
 
-Time windows are compressed, roughly 10×, so that a run takes seconds instead of minutes.
+There are two sets of profiles:
+- **P0–P8** below belong to the WatDiv suite.
+- **Suite-agnostic archetypes and mixes** run with every suite. They are documented in [profiles/README.md](profiles/README.md):
+  - **`simple`:** what popular public endpoints do: rate limits with bursts and queues, concurrency limits, result caps, timeouts.
+  - **`restrictive`:** hard mode, with all 14 archetypes and only 5% of the endpoints open. It adds usage budgets in cost units, identified access, zero tolerance, a tarpit, empty answers under load, and a budget shared with other users.
+  - **`archetype-<id>`:** one archetype on every endpoint.
+
+  They are modelled on real policies, assigned to endpoints in blocks of 20 with a seed, and run in real time.
+
+In P0–P8, time windows are compressed, roughly 10×, so that a run takes seconds instead of minutes.
 
 | Profile | Restrictions |
 |---|---|
@@ -112,10 +121,13 @@ Each run is one query, with one engine, under one profile and scenario, in a fre
 Each profile is defined once in [profiles/](profiles/), and that file drives both what the proxy enforces and what clients read. A query passes through three layers:
 
 1. **Emulation** of the profile's hard restrictions, per client:
-   - rate and quota limits, with a sliding window (429 with `Retry-After`, or queueing)
-   - concurrency (503, or queueing)
-   - evaluation time (503)
-   - result size, by truncation (`X-SPARQL-MaxRows`) or rejection (413)
+   - rate and quota limits, with a sliding window: 429 with `Retry-After`; queueing, optionally with a queue limit beyond which requests get 503; or delays that grow with the excess (a tarpit). The limit can be shared with seeded background tenants.
+   - bans after repeated violations (`penaltyThreshold`, `penaltyDuration`)
+   - identification: a contact in `From` or the User-Agent, else 403; clients that switch identity are blocked
+   - usage budgets in cost units, reported in `X-RateLimit-*` headers (429 when spent)
+   - concurrency: 503, queueing, or an empty partial answer with `X-SQL-State`
+   - evaluation time: 503, or an empty partial answer (anytime queries)
+   - result size, by truncation (with or without `X-SPARQL-MaxRows`) or rejection (413)
 
    Soft restrictions are only described. A request that the emulation rejects never reaches the upstream.
 2. **Safety**, per upstream host, for real endpoints: a rate (requests wait, up to a maximum), a concurrency cap, a budget of requests, a breaker that opens after repeated 403, 429 or 5xx responses, and a kill switch. Refusals are 503 with `X-Vord-Proxy-Safety`, and are logged separately from the emulated restrictions. The harness stops a campaign when a breaker opens or the kill switch is on.

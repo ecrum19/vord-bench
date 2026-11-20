@@ -1,0 +1,15 @@
+{
+  "id": "open",
+  "code": "S",
+  "group": "documented",
+  "label": "an open endpoint",
+  "description": "No restrictions, as Fuseki, Oxigraph and GraphDB ship by default; most public endpoints have no result cap.",
+  "basedOn": [
+    {
+      "source": "SPARQLES endpoint monitor, Wayback Machine snapshots 2017–2022 (about 70% of the available endpoints have no result cap)",
+      "url": "https://web.archive.org/web/2022/https://sparqles.ai.wu.ac.at/",
+      "retrieved": "2026-11-20"
+    }
+  ],
+  "restrictions": []
+}

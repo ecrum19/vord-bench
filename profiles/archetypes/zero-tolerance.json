@@ -1,0 +1,30 @@
+{
+  "id": "zero-tolerance",
+  "code": "Z",
+  "group": "adversarial",
+  "label": "an endpoint that bans at the first violation",
+  "description": "A firewall rule in the style of fail2ban (whose default ban time is 10 minutes): 10 requests per second, and the first request over that blocks the client for 10 minutes with 403.",
+  "basedOn": [
+    {
+      "source": "fail2ban (default bantime 10 minutes)",
+      "url": "https://github.com/fail2ban/fail2ban",
+      "retrieved": "2026-11-20"
+    }
+  ],
+  "restrictions": [
+    {
+      "id": "rate",
+      "type": "RateRestriction",
+      "metric": "requestsPerWindow",
+      "maxValue": 10,
+      "windowDuration": "PT1S",
+      "unit": "COUNT",
+      "scope": "PerClientIP",
+      "enforcement": "RejectRequest",
+      "hardRestriction": true,
+      "returnsStatusCode": 403,
+      "penaltyThreshold": 1,
+      "penaltyDuration": "PT10M"
+    }
+  ]
+}

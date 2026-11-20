@@ -1,5 +1,5 @@
 {
-  "description": "Comunica engine configurations, derived from the fork's default config (baseConfig). replaceImports swaps imports of the base config; overrides are Components.js overrides; context is passed with every query. All engines run the same fork build, so they only differ in what is listed here. providedRestrictions marks the engines that read restrictions provided in the endpointRestrictions context entry (the VoRD engines); the others replace the fork's context-preprocess actors by the upstream ones, so that provided restrictions can never reach them.",
+  "description": "Comunica engine configurations, derived from the fork's default config (baseConfig). replaceImports swaps imports of the base config; overrides are Components.js overrides; context is passed with every query. All engines run the same fork build, so they only differ in what is listed here. providedRestrictions marks the engines that read restrictions provided in the endpointRestrictions context entry (the VoRD engines); the others replace the fork's context-preprocess actors by the upstream ones, so that provided restrictions can never reach them. The VoRD engines also get a synthetic client contact, which the fork only sends to endpoints whose restrictions require identification.",
   "baseConfig": "engines/config-query-sparql/config/config-default-v5-4-1.json",
   "engines": {
     "A-naive": {
@@ -61,7 +61,9 @@
         {
           "@id": "urn:vord-bench:override:limit-rate",
           "@type": "Override",
-          "overrideInstance": { "@id": "urn:comunica:default:http/actors#limit-rate" },
+          "overrideInstance": {
+            "@id": "urn:comunica:default:http/actors#limit-rate"
+          },
           "overrideSteps": [
             {
               "@type": "OverrideParameters",
@@ -91,7 +93,9 @@
         {
           "@id": "urn:vord-bench:override:sparql",
           "@type": "Override",
-          "overrideInstance": { "@id": "urn:comunica:default:query-source-identify-hypermedia/actors#sparql" },
+          "overrideInstance": {
+            "@id": "urn:comunica:default:query-source-identify-hypermedia/actors#sparql"
+          },
           "overrideSteps": [
             {
               "@type": "OverrideParameters",
@@ -106,7 +110,11 @@
       "context": {
         "@comunica/bus-http:http-retry-count": 3,
         "@comunica/bus-http:http-retry-delay-fallback": 1000,
-        "@comunica/bus-http:http-retry-delay-limit": 30000
+        "@comunica/bus-http:http-retry-delay-limit": 30000,
+        "@comunica/bus-http:client-contact": {
+          "email": "vord-bench@example.org",
+          "url": "https://github.com/ecrum19/vord-bench"
+        }
       }
     },
     "D-vord-full": {
@@ -115,7 +123,11 @@
       "context": {
         "@comunica/bus-http:http-retry-count": 3,
         "@comunica/bus-http:http-retry-delay-fallback": 1000,
-        "@comunica/bus-http:http-retry-delay-limit": 30000
+        "@comunica/bus-http:http-retry-delay-limit": 30000,
+        "@comunica/bus-http:client-contact": {
+          "email": "vord-bench@example.org",
+          "url": "https://github.com/ecrum19/vord-bench"
+        }
       }
     }
   }

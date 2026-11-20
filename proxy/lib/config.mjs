@@ -56,6 +56,7 @@ export function normalizeConfig(raw) {
       upstream,
       defaultGraph: entry.defaultGraph,
       aliases: entry.aliases ?? [],
+      group: entry.group,
     };
   }
   // Safety limits are kept per host: upstreams on the same host must agree on them.

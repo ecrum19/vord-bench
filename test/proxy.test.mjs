@@ -23,6 +23,25 @@ const PROFILES = new Map([
   [ 'conc', { id: 'conc', restrictions: [{ id: 'concurrency', type: 'ConcurrentRequestsRestriction', maxValue: 1, enforcement: 'RejectRequest', returnsStatusCode: 503 }]}],
   [ 'slow', { id: 'slow', restrictions: [{ id: 'timeout', type: 'ResponseTimeRestriction', maxValue: 0.2, enforcement: 'RejectRequest', returnsStatusCode: 503 }]}],
   [ 'mixed', { id: 'mixed', endpoints: { a: [ rate(1, 'PT10S') ]}}],
+  [ 'ident', { id: 'ident', restrictions: [
+    { id: 'id', type: 'IdentificationRestriction', identificationHeader: 'From', identificationFormat: 'EmailAddress', returnsStatusCode: 403, hardRestriction: true },
+  ]}],
+  [ 'agent', { id: 'agent', restrictions: [
+    { id: 'id', type: 'IdentificationRestriction', identificationHeader: 'User-Agent', identificationFormat: 'ProductWithContact', hardRestriction: true },
+  ]}],
+  [ 'zero', { id: 'zero', restrictions: [{ ...rate(2, 'PT10S'), returnsStatusCode: 403, penaltyThreshold: 1, penaltyDuration: 'PT10M' }]}],
+  [ 'nginx', { id: 'nginx', restrictions: [{ ...rate(1, 'PT0.5S'), enforcement: 'QueueRequest', returnsStatusCode: 503, emulation: { queueLimit: 1 }}]}],
+  [ 'tarpit', { id: 'tarpit', restrictions: [{ ...rate(2, 'PT10S'), enforcement: 'ThrottleResponse', returnsStatusCode: undefined, emulation: { delayPerExcessMs: 150 }}]}],
+  [ 'degrade', { id: 'degrade', restrictions: [
+    { id: 'concurrency', type: 'ConcurrentRequestsRestriction', metric: 'concurrentRequests', maxValue: 1, enforcement: 'DegradeQuality', returnsStatusCode: 200, httpSignalHeader: 'X-SQL-State', hardRestriction: true },
+  ]}],
+  [ 'anytime', { id: 'anytime', restrictions: [
+    { id: 'timeout', type: 'ResponseTimeRestriction', maxValue: 0.2, enforcement: 'TruncateResult', httpSignalHeader: 'x-sql-state', hardRestriction: true },
+  ]}],
+  [ 'silent', { id: 'silent', restrictions: [{ id: 'results', type: 'ResultSizeRestriction', maxValue: 3, enforcement: 'TruncateResult', emulation: { silent: true }}]}],
+  [ 'tokens', { id: 'tokens', restrictions: [
+    { id: 'budget', type: 'CostModelRestriction', metric: 'costUnitsPerWindow', maxValue: 60, burstValue: 4, windowDuration: 'PT60S', costModel: 'units', returnsStatusCode: 429, httpSignalHeader: 'X-RateLimit-Remaining', hardRestriction: true, emulation: { cost: { base: 1, aggregate: 1, rowsPerUnit: 2 }}},
+  ]}],
 ]);
 
 /**
@@ -323,6 +342,95 @@ describe('vord-proxy', () => {
     }
     assert.deepEqual(statuses, [ 200, 200, 429 ]);
     assert.equal(entries.at(-1).description, 'provided');
+  });
+
+  it('requires identification in the From header, and bans clients that switch identity', async() => {
+    const query = (from, profile = 'ident') => get(base('a'), `/${profile}/sparql`, SELECT, from ? { headers: { from }} : undefined);
+    assert.match(await (await fetch(`${base('a')}/ident/sparql`)).text(), /vord:IdentificationRestriction/u, 'the description needs no identification');
+    assert.equal((await query()).status, 403);
+    assert.equal(entries.at(-1).reason, 'identification');
+    assert.equal((await query('not an email')).status, 403);
+    assert.equal((await query('bench@example.org')).status, 200);
+    assert.equal((await query('bench@example.org')).status, 200);
+    assert.equal((await query('other@example.org')).status, 403);
+    assert.equal(entries.at(-1).reason, 'identity-switch');
+    assert.equal((await query('bench@example.org')).status, 403);
+    assert.equal(entries.at(-1).reason, 'banned');
+  });
+
+  it('requires a User-Agent with contact information', async() => {
+    const query = userAgent => get(base('a'), '/agent/sparql', SELECT, { headers: { 'user-agent': userAgent }});
+    assert.equal((await query('Comunica/5.0 (Node.js v24; linux)')).status, 403);
+    assert.equal((await query('Comunica/5.0 (https://example.org/bench; bench@example.org)')).status, 200);
+  });
+
+  it('bans clients at the first violation of a zero-tolerance limit', async() => {
+    assert.equal((await select('a', 'zero')).status, 200);
+    assert.equal((await select('a', 'zero')).status, 200);
+    assert.equal((await select('a', 'zero')).status, 403);
+    assert.equal(entries.at(-1).reason, 'rate');
+    const banned = await select('a', 'zero');
+    assert.equal(banned.status, 403);
+    assert.equal(entries.at(-1).reason, 'banned');
+    assert.ok(Number(banned.headers.get('retry-after')) > 590);
+  });
+
+  it('queues requests behind a rate limit, and rejects them with 503 without Retry-After once the queue is full', async() => {
+    const responses = await Promise.all([ select('a', 'nginx'), select('a', 'nginx'), select('a', 'nginx') ]);
+    assert.deepEqual(responses.map(response => response.status).sort(), [ 200, 200, 503 ]);
+    const rejected = responses.find(response => response.status === 503);
+    assert.equal(rejected.headers.get('retry-after'), null);
+  });
+
+  it('delays requests over the limit of a tarpit without rejecting them', async() => {
+    const start = Date.now();
+    for (let i = 0; i < 4; i++) {
+      assert.equal((await select('a', 'tarpit')).status, 200);
+    }
+    assert.ok(Date.now() - start >= 400, 'the third and fourth requests waited 150 and 300 ms');
+    assert.equal(entries.at(-1).queuedMs, 300);
+  });
+
+  it('answers emptily, with a signal header, when too many requests are in flight', async() => {
+    const [ first, second ] = await Promise.all([
+      select('a', 'degrade', `${SELECT} # SLOW`),
+      sleep(100).then(() => select('a', 'degrade')),
+    ]);
+    assert.equal((await first.json()).results.bindings.length, 5);
+    assert.equal(second.status, 200);
+    assert.equal(second.headers.get('x-sql-state'), 'S1TAT');
+    assert.deepEqual(await second.json(), { head: { vars: [ 'o' ]}, results: { bindings: []}});
+    assert.equal(entries.find(entry => entry.reason === 'concurrency-degraded').degraded, true);
+  });
+
+  it('answers emptily after the evaluation time of an anytime endpoint', async() => {
+    const response = await select('a', 'anytime', `${SELECT} # SLOW`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('x-sql-state'), 'S1TAT');
+    assert.equal((await response.json()).results.bindings.length, 0);
+    assert.equal(entries.at(-1).reason, 'timeout-degraded');
+  });
+
+  it('truncates silently', async() => {
+    const response = await select('a', 'silent');
+    assert.equal(response.headers.get('x-sparql-maxrows'), null);
+    assert.equal((await response.json()).results.bindings.length, 3);
+  });
+
+  it('charges a usage budget and reports it in every response', async() => {
+    const first = await select('a', 'tokens');
+    assert.equal(first.status, 200);
+    // 1 unit for the request and 2 for its 5 results, from a budget of 4.
+    assert.equal(first.headers.get('x-ratelimit-credits-used'), '3');
+    assert.equal(first.headers.get('x-ratelimit-remaining'), '1');
+    assert.equal(first.headers.get('x-ratelimit-limit'), '60');
+    assert.equal(entries.at(-1).cost, 3);
+    const aggregate = await select('a', 'tokens', 'SELECT ( COUNT( * ) AS ?c ) WHERE { ?s ?p ?o }');
+    assert.equal(aggregate.status, 429, 'an aggregate costs 2 units');
+    assert.equal(aggregate.headers.get('x-ratelimit-remaining'), '1');
+    assert.ok(Number(aggregate.headers.get('retry-after')) >= 1);
+    assert.equal(entries.at(-1).reason, 'budget');
+    assert.match(await (await fetch(`${base('a')}/tokens/sparql`)).text(), /a vord:CostModel/u);
   });
 
   it('describes no restrictions in the none mode', async() => {

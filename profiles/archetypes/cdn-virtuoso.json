@@ -1,0 +1,93 @@
+{
+  "id": "cdn-virtuoso",
+  "code": "C",
+  "group": "documented",
+  "label": "a Virtuoso behind a CDN",
+  "description": "A Virtuoso with its shipped defaults behind a CDN whose origin timeout is shorter than Virtuoso's: CloudFront gives up after 30 s with 504 (as for data.europa.eu); Cloudflare after 125 s with 524 (as for Bgee).",
+  "basedOn": [
+    {
+      "source": "Amazon CloudFront origin response timeout (30 s default)",
+      "url": "https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DownloadDistValuesOrigin.html",
+      "retrieved": "2026-11-20"
+    }
+  ],
+  "restrictions": [
+    {
+      "id": "results",
+      "type": "ResultSizeRestriction",
+      "metric": "resultBindings",
+      "maxValue": 10000,
+      "unit": "COUNT",
+      "scope": "PerRequest",
+      "enforcement": "TruncateResult",
+      "hardRestriction": true,
+      "emulation": {
+        "silent": true,
+        "maxValueDistribution": [
+          [
+            10000,
+            49
+          ],
+          [
+            100000,
+            7
+          ],
+          [
+            1000,
+            3
+          ],
+          [
+            50000,
+            3
+          ],
+          [
+            20000,
+            2
+          ],
+          [
+            500,
+            1
+          ],
+          [
+            1500,
+            1
+          ],
+          [
+            5000,
+            1
+          ],
+          [
+            40000,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "id": "timeout",
+      "type": "ResponseTimeRestriction",
+      "metric": "evaluationTime",
+      "maxValue": 60,
+      "unit": "SEC",
+      "scope": "PerRequest",
+      "enforcement": "TruncateResult",
+      "hardRestriction": true,
+      "returnsStatusCode": 200,
+      "httpSignalHeader": "x-sql-state",
+      "emulation": {
+        "degradedState": "S1TAT"
+      }
+    },
+    {
+      "id": "cdn-timeout",
+      "type": "ResponseTimeRestriction",
+      "metric": "evaluationTime",
+      "maxValue": 30,
+      "unit": "SEC",
+      "scope": "PerRequest",
+      "enforcement": "RejectRequest",
+      "hardRestriction": true,
+      "returnsStatusCode": 504
+    }
+  ]
+}

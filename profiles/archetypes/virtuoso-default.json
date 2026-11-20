@@ -1,0 +1,87 @@
+{
+  "id": "virtuoso-default",
+  "code": "O",
+  "group": "documented",
+  "label": "a Virtuoso endpoint with its shipped defaults",
+  "description": "Virtuoso's shipped virtuoso.ini: ResultSetMaxRows 10,000 and an anytime MaxQueryExecutionTime of 60 s. The cap is drawn per endpoint from the caps that Buil-Aranda et al. measured (49 of 68 capped endpoints at 10,000). Truncation is silent; timed-out queries return a partial (here empty) answer with X-SQL-State.",
+  "basedOn": [
+    {
+      "source": "Virtuoso shipped virtuoso.ini",
+      "url": "https://github.com/openlink/virtuoso-opensource/blob/develop/7/binsrc/virtuoso/virtuoso.ini",
+      "retrieved": "2026-11-20"
+    },
+    {
+      "source": "Buil-Aranda et al., SPARQL Web-Querying Infrastructure: Ready for Action?, ISWC 2013, Table 3",
+      "url": "https://aidanhogan.com/docs/epmonitorISWC.pdf",
+      "retrieved": "2026-11-20"
+    }
+  ],
+  "restrictions": [
+    {
+      "id": "results",
+      "type": "ResultSizeRestriction",
+      "metric": "resultBindings",
+      "maxValue": 10000,
+      "unit": "COUNT",
+      "scope": "PerRequest",
+      "enforcement": "TruncateResult",
+      "hardRestriction": true,
+      "emulation": {
+        "silent": true,
+        "maxValueDistribution": [
+          [
+            10000,
+            49
+          ],
+          [
+            100000,
+            7
+          ],
+          [
+            1000,
+            3
+          ],
+          [
+            50000,
+            3
+          ],
+          [
+            20000,
+            2
+          ],
+          [
+            500,
+            1
+          ],
+          [
+            1500,
+            1
+          ],
+          [
+            5000,
+            1
+          ],
+          [
+            40000,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "id": "timeout",
+      "type": "ResponseTimeRestriction",
+      "metric": "evaluationTime",
+      "maxValue": 60,
+      "unit": "SEC",
+      "scope": "PerRequest",
+      "enforcement": "TruncateResult",
+      "hardRestriction": true,
+      "returnsStatusCode": 200,
+      "httpSignalHeader": "x-sql-state",
+      "emulation": {
+        "degradedState": "S1TAT"
+      }
+    }
+  ]
+}

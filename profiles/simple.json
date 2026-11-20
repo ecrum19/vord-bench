@@ -1,0 +1,23 @@
+{
+  "id": "simple",
+  "label": "Restrictions that popular public endpoints use: rate limits with bursts and queues, concurrency limits, result caps and timeouts",
+  "description": "A mix of the documented-policy archetypes, per block of 20 endpoints. Every restriction is described with VoRD terms that engines can act on.",
+  "mix": {
+    "blockSize": 20,
+    "seed": 1,
+    "shares": {
+      "open": 2,
+      "virtuoso-default": 3,
+      "dbpedia": 3,
+      "wikidata": 4,
+      "uniprot": 4,
+      "cdn-virtuoso": 1,
+      "nginx": 3
+    }
+  },
+  "seeds": [
+    1,
+    2,
+    3
+  ]
+}

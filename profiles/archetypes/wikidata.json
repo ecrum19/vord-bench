@@ -1,0 +1,42 @@
+{
+  "id": "wikidata",
+  "code": "W",
+  "group": "documented",
+  "label": "a Wikidata-like endpoint",
+  "description": "The Wikidata Query Service: a 60 s timeout, 5 parallel queries per IP address (429 with Retry-After beyond that), and a block for clients that keep violating it. WDQS does not publish the blocking rule; here, 30 violations within a minute block the client for a minute.",
+  "basedOn": [
+    {
+      "source": "Wikidata Query Service user manual, query limits",
+      "url": "https://www.mediawiki.org/wiki/Wikidata_Query_Service/User_Manual#Query_limits",
+      "retrieved": "2026-11-20"
+    }
+  ],
+  "restrictions": [
+    {
+      "id": "timeout",
+      "type": "ResponseTimeRestriction",
+      "metric": "evaluationTime",
+      "maxValue": 60,
+      "unit": "SEC",
+      "scope": "PerRequest",
+      "enforcement": "RejectRequest",
+      "hardRestriction": true,
+      "returnsStatusCode": 500
+    },
+    {
+      "id": "concurrency",
+      "type": "ConcurrentRequestsRestriction",
+      "metric": "concurrentRequests",
+      "maxValue": 5,
+      "unit": "COUNT",
+      "scope": "PerClientIP",
+      "enforcement": "RejectRequest",
+      "hardRestriction": true,
+      "returnsStatusCode": 429,
+      "retryAfterHint": "PT1S",
+      "httpSignalHeader": "retry-after",
+      "penaltyThreshold": 30,
+      "penaltyDuration": "PT1M"
+    }
+  ]
+}

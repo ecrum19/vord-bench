@@ -126,8 +126,9 @@ describe('profiles', () => {
   const profiles = loadProfiles(new URL('../profiles', import.meta.url).pathname);
 
   it('loads all profiles in the repository', () => {
-    assert.deepEqual([ ...profiles.keys() ], [
+    assert.deepEqual([ ...profiles.keys() ].filter(id => !id.startsWith('archetype-')), [
       'P0-none', 'P1-rate', 'P2-burst', 'P3-truncate', 'P4-concurrency', 'P5-timeout', 'P6-combined', 'P7-mixed', 'P8-unadvertised',
+      'restrictive', 'restrictive-s2', 'restrictive-s3', 'simple', 'simple-s2', 'simple-s3',
     ]);
   });
 
@@ -170,15 +171,16 @@ describe('profiles', () => {
   it('plans the enforcement of hard restrictions only', () => {
     const plan = enforcementPlan(restrictionsFor(profiles.get('P6-combined'), 'all'));
     assert.equal(plan.rates.length, 1, 'the soft daily quota is not enforced');
-    assert.equal(plan.rateQueue, false);
-    assert.equal(plan.rateStatus, 429);
+    assert.equal(plan.rates[0].enforcement, 'RejectRequest');
+    assert.equal(plan.rates[0].statusCode, 429);
     assert.equal(plan.concurrency.maxValue, 3);
     assert.equal(plan.timeoutMs, 2_000);
     assert.equal(plan.resultLimit, 1_000);
     assert.equal(plan.resultReject, false);
     assert.deepEqual(enforcementPlan([]), {
-      rates: [], rateQueue: false, rateStatus: 429, concurrency: undefined, timeoutMs: undefined, timeoutStatus: 503,
-      resultLimit: undefined, resultReject: false, resultStatus: 413,
+      rates: [], concurrency: undefined, timeoutMs: undefined, timeoutStatus: 503, timeoutDegrades: false,
+      timeoutRestriction: undefined, resultLimit: undefined, resultReject: false, resultStatus: 413, resultSilent: false,
+      budget: undefined, identification: [],
     });
   });
 });
