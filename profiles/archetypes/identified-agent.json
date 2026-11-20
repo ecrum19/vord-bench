@@ -1,0 +1,79 @@
+{
+  "id": "identified-agent",
+  "code": "I",
+  "group": "access",
+  "label": "an endpoint that requires a User-Agent with contact information",
+  "description": "Every request must carry a User-Agent that names the client and gives a contact in parentheses, as Wikimedia's User-Agent policy and Nominatim's usage policy require; others get 403. Limits as for identified-email.",
+  "basedOn": [
+    {
+      "source": "Wikimedia User-Agent policy",
+      "url": "https://foundation.wikimedia.org/wiki/Policy:Wikimedia_Foundation_User-Agent_Policy",
+      "retrieved": "2026-11-20"
+    },
+    {
+      "source": "Nominatim usage policy",
+      "url": "https://operations.osmfoundation.org/policies/nominatim/",
+      "retrieved": "2026-11-20"
+    }
+  ],
+  "restrictions": [
+    {
+      "id": "identification",
+      "type": "IdentificationRestriction",
+      "identificationHeader": "user-agent",
+      "identificationFormat": "ProductWithContact",
+      "scope": "PerRequest",
+      "enforcement": "RejectRequest",
+      "hardRestriction": true,
+      "returnsStatusCode": 403
+    },
+    {
+      "id": "rate",
+      "type": "RateRestriction",
+      "metric": "requestsPerWindow",
+      "maxValue": 20,
+      "windowDuration": "PT2S",
+      "unit": "COUNT",
+      "scope": "PerUser",
+      "enforcement": "RejectRequest",
+      "hardRestriction": true,
+      "returnsStatusCode": 429,
+      "retryAfterHint": "PT1S",
+      "httpSignalHeader": "retry-after"
+    },
+    {
+      "id": "concurrency",
+      "type": "ConcurrentRequestsRestriction",
+      "metric": "concurrentRequests",
+      "maxValue": 10,
+      "unit": "COUNT",
+      "scope": "PerUser",
+      "enforcement": "RejectRequest",
+      "hardRestriction": true,
+      "returnsStatusCode": 429,
+      "retryAfterHint": "PT1S"
+    },
+    {
+      "id": "results",
+      "type": "ResultSizeRestriction",
+      "metric": "resultBindings",
+      "maxValue": 10000,
+      "unit": "COUNT",
+      "scope": "PerRequest",
+      "enforcement": "TruncateResult",
+      "hardRestriction": true,
+      "httpSignalHeader": "x-sparql-maxrows"
+    },
+    {
+      "id": "timeout",
+      "type": "ResponseTimeRestriction",
+      "metric": "evaluationTime",
+      "maxValue": 60,
+      "unit": "SEC",
+      "scope": "PerRequest",
+      "enforcement": "RejectRequest",
+      "hardRestriction": true,
+      "returnsStatusCode": 503
+    }
+  ]
+}

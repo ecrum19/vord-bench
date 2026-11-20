@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { DEFAULT_RUN_HEADER, DESCRIPTION_MODES } from '../proxy/lib/config.mjs';
+import { endpointList, resolveProfiles } from '../proxy/lib/archetypes.mjs';
 import { loadProfiles, restrictionsFor } from '../proxy/lib/profiles.mjs';
 import { ROOT, fromRoot, loadEngineManifest, parseList, readJson } from './lib/config.mjs';
 import { groundTruthPath, loadSuite, membersOf, readQueries, scenariosOf } from './lib/suites.mjs';
@@ -106,9 +107,14 @@ function selection(values, config) {
     }
     return chosen;
   };
-  const allProfiles = loadProfiles(fromRoot('profiles'));
-  const profiles = pick(values.profiles, config.profiles, config.suiteProfiles.filter(id => allProfiles.has(id)), 'profile')
-    .map(id => allProfiles.get(id));
+  // Mixes of archetypes are resolved for the endpoints of the suite, in the same way as the proxy does.
+  const allProfiles = resolveProfiles(loadProfiles(fromRoot('profiles')), endpointList(config.endpoints));
+  // Generic profiles (archetype mixes, and one per archetype) can be chosen for every suite.
+  const available = [ ...new Set([
+    ...config.suiteProfiles.filter(id => allProfiles.has(id)),
+    ...[ ...allProfiles.values() ].filter(profile => profile.generic).map(profile => profile.id),
+  ]) ];
+  const profiles = pick(values.profiles, config.profiles, available, 'profile').map(id => allProfiles.get(id));
   const allScenarios = scenariosOf(config);
   const scenarios = pick(values.scenarios, allScenarios, allScenarios, 'scenario');
   const definitions = readJson('engines/engines.json').engines;

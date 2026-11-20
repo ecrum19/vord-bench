@@ -1,0 +1,31 @@
+{
+  "id": "nginx",
+  "code": "R",
+  "group": "documented",
+  "label": "an endpoint behind an nginx rate limit",
+  "description": "nginx's limit_req, the usual way to rate-limit a self-hosted Fuseki, GraphDB or Virtuoso: 10 requests per second, up to 20 more are queued, and the rest are rejected with 503, without Retry-After (NGINX's own example values).",
+  "basedOn": [
+    {
+      "source": "NGINX, Rate Limiting with NGINX",
+      "url": "https://blog.nginx.org/blog/rate-limiting-nginx",
+      "retrieved": "2026-11-20"
+    }
+  ],
+  "restrictions": [
+    {
+      "id": "rate",
+      "type": "RateRestriction",
+      "metric": "requestsPerWindow",
+      "maxValue": 10,
+      "windowDuration": "PT1S",
+      "unit": "COUNT",
+      "scope": "PerClientIP",
+      "enforcement": "QueueRequest",
+      "hardRestriction": true,
+      "returnsStatusCode": 503,
+      "emulation": {
+        "queueLimit": 20
+      }
+    }
+  ]
+}

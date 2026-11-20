@@ -1,0 +1,30 @@
+{
+  "id": "tarpit",
+  "code": "L",
+  "group": "adversarial",
+  "label": "a tarpit",
+  "description": "Slow-down middleware: the first 100 requests per 10 s are served at full speed; each further request in the window waits 100 ms times the number of requests over the limit. No error ever signals the limit.",
+  "basedOn": [
+    {
+      "source": "express-slow-down (slow-down middleware for Express)",
+      "url": "https://github.com/express-rate-limit/express-slow-down",
+      "retrieved": "2026-11-20"
+    }
+  ],
+  "restrictions": [
+    {
+      "id": "rate",
+      "type": "RateRestriction",
+      "metric": "requestsPerWindow",
+      "maxValue": 100,
+      "windowDuration": "PT10S",
+      "unit": "COUNT",
+      "scope": "PerClientIP",
+      "enforcement": "ThrottleResponse",
+      "hardRestriction": true,
+      "emulation": {
+        "delayPerExcessMs": 100
+      }
+    }
+  ]
+}

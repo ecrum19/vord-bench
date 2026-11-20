@@ -1,0 +1,49 @@
+{
+  "id": "usage-tokens",
+  "code": "T",
+  "group": "access",
+  "label": "an endpoint with a usage budget in cost units",
+  "description": "A budget of 600 units per minute, of which at most 200 can be spent at once, as OpenAlex, GitHub and Shopify meter their APIs. A request costs 1 unit, plus 1 for an aggregate (such as COUNT), plus 1 per full 100 result rows. Every response reports the budget in X-RateLimit-* headers; a spent budget gives 429 with Retry-After.",
+  "basedOn": [
+    {
+      "source": "OpenAlex rate limits and authentication",
+      "url": "https://help.openalex.org/how-to-use-the-api/rate-limits-and-authentication",
+      "retrieved": "2026-11-20"
+    },
+    {
+      "source": "GitHub GraphQL API rate limits",
+      "url": "https://docs.github.com/en/graphql/overview/rate-limits-and-query-limits-for-the-graphql-api",
+      "retrieved": "2026-11-20"
+    },
+    {
+      "source": "Shopify GraphQL Admin API rate limits",
+      "url": "https://shopify.dev/docs/apps/build/apis/graphql-admin/rate-limits",
+      "retrieved": "2026-11-20"
+    }
+  ],
+  "restrictions": [
+    {
+      "id": "budget",
+      "type": "CostModelRestriction",
+      "metric": "costUnitsPerWindow",
+      "maxValue": 600,
+      "burstValue": 200,
+      "windowDuration": "PT1M",
+      "unit": "ONE",
+      "costModel": "units-v1",
+      "costModelDescription": "A request costs 1 unit, plus 1 unit if it is an aggregate query, plus 1 unit per full 100 result rows.",
+      "scope": "PerClientIP",
+      "enforcement": "RejectRequest",
+      "hardRestriction": true,
+      "returnsStatusCode": 429,
+      "httpSignalHeader": "x-ratelimit-remaining",
+      "emulation": {
+        "cost": {
+          "base": 1,
+          "aggregate": 1,
+          "rowsPerUnit": 100
+        }
+      }
+    }
+  ]
+}

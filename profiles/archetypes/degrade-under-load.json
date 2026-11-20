@@ -1,0 +1,31 @@
+{
+  "id": "degrade-under-load",
+  "code": "E",
+  "group": "adversarial",
+  "label": "an endpoint that answers emptily under pressure",
+  "description": "Virtuoso's anytime queries under load: a request that arrives while 3 requests of the same client are running gets an empty partial answer, with status 200 and X-SQL-State: S1TAT.",
+  "basedOn": [
+    {
+      "source": "Virtuoso anytime queries",
+      "url": "https://docs.openlinksw.com/virtuoso/anytimequeries/",
+      "retrieved": "2026-11-20"
+    }
+  ],
+  "restrictions": [
+    {
+      "id": "concurrency",
+      "type": "ConcurrentRequestsRestriction",
+      "metric": "concurrentRequests",
+      "maxValue": 3,
+      "unit": "COUNT",
+      "scope": "PerClientIP",
+      "enforcement": "DegradeQuality",
+      "hardRestriction": true,
+      "returnsStatusCode": 200,
+      "httpSignalHeader": "x-sql-state",
+      "emulation": {
+        "degradedState": "S1TAT"
+      }
+    }
+  ]
+}

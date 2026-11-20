@@ -10,8 +10,15 @@
  * Requests without a query obtain the service description.
  *
  * A query passes through three layers:
- * 1. emulation: the profile's hard restrictions (rate 429 or queue, concurrency 503 or queue, evaluation time 503,
- *    result size by truncation or 413). A request rejected here never reaches the upstream.
+ * 1. emulation: the profile's hard restrictions. A request rejected here never reaches the upstream:
+ *    - bans after repeated violations (penaltyThreshold, penaltyDuration);
+ *    - identification (a contact in a required header), with a ban for clients that switch identity;
+ *    - rate and quota: rejected (status, Retry-After), queued (QueueRequest; beyond emulation.queueLimit rejected
+ *      without Retry-After) or delayed (ThrottleResponse, a tarpit); optionally shared with background tenants;
+ *    - usage budgets in cost units (429 when spent, and X-RateLimit-* headers on every response);
+ *    - concurrency: rejected, queued, or answered with an empty partial result (DegradeQuality);
+ *    - evaluation time: rejected, or answered with an empty partial result (TruncateResult, DegradeQuality);
+ *    - result size: truncated (silently or with X-SPARQL-MaxRows) or rejected (413).
  * 2. safety: limits per upstream host that protect real endpoints (rate, concurrency, budget, breaker, kill switch).
  * 3. upstream: the request to the upstream (GET or POST, configured headers, default graph, timeout parameter),
  *    streamed back through a scanner that counts and truncates results; or a recorded response (replay).
@@ -25,8 +32,9 @@ import { resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
+import { endpointList, resolveProfiles, seededRandom } from './lib/archetypes.mjs';
 import { DESCRIPTION_MODES, normalizeConfig } from './lib/config.mjs';
-import { ConcurrencyGate, SlidingWindows } from './lib/limiter.mjs';
+import { ConcurrencyGate, RateLimiter, TokenBucket } from './lib/limiter.mjs';
 import { PolicyMonitor } from './lib/policy.mjs';
 import { loadProfiles, normalizeRestriction, restrictionsFor, serviceDescription } from './lib/profiles.mjs';
 import { Recorder } from './lib/recorder.mjs';
@@ -46,23 +54,89 @@ export function enforcementPlan(restrictions) {
   const concurrency = hard.filter(restriction => restriction.type === 'ConcurrentRequestsRestriction' &&
     restriction.maxValue > 0);
   const responseTime = hard.filter(restriction => restriction.type === 'ResponseTimeRestriction' &&
-    restriction.enforcement === 'RejectRequest' && restriction.maxValue > 0);
+    [ 'RejectRequest', 'TruncateResult', 'DegradeQuality' ].includes(restriction.enforcement) &&
+    restriction.maxValue > 0);
   const resultSize = hard.filter(restriction => restriction.type === 'ResultSizeRestriction' &&
     restriction.maxValue >= 0);
+  const budgets = hard.filter(restriction => restriction.type === 'CostModelRestriction' &&
+    restriction.metric === 'costUnitsPerWindow' && restriction.maxValue > 0 && restriction.windowMs > 0);
   const minBy = (list, key) => list.length > 0 ? list.reduce((a, b) => b[key] < a[key] ? b : a) : undefined;
   const concurrencyRestriction = minBy(concurrency, 'maxValue');
   const responseTimeRestriction = minBy(responseTime, 'maxValue');
   const resultSizeRestriction = minBy(resultSize, 'maxValue');
   return {
     rates,
-    rateQueue: rates.length > 0 && rates.every(restriction => restriction.enforcement === 'QueueRequest'),
-    rateStatus: rates.find(restriction => restriction.statusCode)?.statusCode ?? 429,
     concurrency: concurrencyRestriction,
     timeoutMs: responseTimeRestriction ? responseTimeRestriction.maxValue * 1_000 : undefined,
     timeoutStatus: responseTimeRestriction?.statusCode ?? 503,
+    timeoutDegrades: responseTimeRestriction !== undefined && responseTimeRestriction.enforcement !== 'RejectRequest',
+    timeoutRestriction: responseTimeRestriction,
     resultLimit: resultSizeRestriction?.maxValue,
     resultReject: resultSizeRestriction?.enforcement === 'RejectRequest',
     resultStatus: resultSizeRestriction?.statusCode ?? 413,
+    resultSilent: resultSizeRestriction?.emulation.silent === true,
+    budget: minBy(budgets, 'maxValue'),
+    identification: hard.filter(restriction => restriction.type === 'IdentificationRestriction'),
+  };
+}
+
+const EMAIL = /^[^\s@<>()]+@[^\s@<>()]+\.[^\s@<>()]+$/u;
+
+/**
+ * Check the identification that a request sends in a header.
+ * @param {object} restriction A normalized identification restriction.
+ * @param {string | undefined} value The value of its header.
+ * @returns {boolean}
+ */
+export function validIdentification(restriction, value) {
+  if (!value) {
+    return false;
+  }
+  if (restriction.identificationFormat === 'EmailAddress') {
+    return EMAIL.test(value.trim());
+  }
+  // ProductWithContact: a product followed by a comment with an email address or URL.
+  const comments = [ ...value.matchAll(/\(([^)]*)\)/gu) ].map(match => match[1]);
+  return /^\S+\/\S*/u.test(value.trim()) && comments.some(comment => comment.split(/[;,\s]+/u)
+    .some(part => EMAIL.test(part) || /^https?:\/\/\S+$/u.test(part)));
+}
+
+/**
+ * The variables that a SELECT query projects, for an empty result with the right head.
+ * @param {string} query
+ */
+export function projectedVariables(query) {
+  const match = /\bSELECT\b([\s\S]*?)(?:\bWHERE\b|\bFROM\b|\{)/iu.exec(query);
+  if (!match) {
+    return [];
+  }
+  let projection = match[1];
+  const variables = [ ...projection.matchAll(/\bAS\s+[?$](\w+)/giu) ].map(found => found[1]);
+  let previous;
+  while (previous !== projection) {
+    previous = projection;
+    projection = projection.replaceAll(/\([^()]*\)/gu, ' ');
+  }
+  variables.push(...[ ...projection.matchAll(/[?$](\w+)/gu) ].map(found => found[1]));
+  return [ ...new Set(variables) ];
+}
+
+/**
+ * An empty, partial answer to a query, as an overloaded or timed-out endpoint may give.
+ * @param {string} form The query form.
+ * @param {string} query
+ * @returns {{ contentType: string, body: string }}
+ */
+export function emptyAnswer(form, query) {
+  if (form === 'CONSTRUCT' || form === 'DESCRIBE') {
+    return { contentType: 'application/n-triples', body: '' };
+  }
+  if (form === 'ASK') {
+    return { contentType: 'application/sparql-results+json', body: '{"head":{},"boolean":false}' };
+  }
+  return {
+    contentType: 'application/sparql-results+json',
+    body: JSON.stringify({ head: { vars: projectedVariables(query) }, results: { bindings: []}}),
   };
 }
 
@@ -113,7 +187,9 @@ export const emptyStats = () => ({
  * @param {() => number} [options.clock]
  * @param {typeof fetch} [options.fetchImpl]
  */
-export function createProxy({ config, profiles, log = () => {}, clock = Date.now, fetchImpl = fetch }) {
+export function createProxy({ config, profiles: rawProfiles, log = () => {}, clock = Date.now, fetchImpl = fetch }) {
+  // Mixes of archetypes, and values drawn per endpoint, are resolved for the endpoints of this configuration.
+  const profiles = resolveProfiles(rawProfiles, endpointList(config.members));
   const states = new Map();
   const stats = new Map();
   const safety = new SafetyLayer(config.upstreams.values(), { clock });
@@ -126,10 +202,16 @@ export function createProxy({ config, profiles, log = () => {}, clock = Date.now
     let state = states.get(key);
     if (!state) {
       const plan = enforcementPlan(restrictionsFor(profile, memberName));
+      const seed = profile.mix?.seed ?? profile.seed ?? 1;
       state = {
         plan,
-        windows: SlidingWindows.fromRestrictions(plan.rates),
+        limiters: plan.rates.map(restriction =>
+          new RateLimiter(restriction, seededRandom(seed, memberName, restriction.id, 'background'))),
         gate: plan.concurrency ? new ConcurrencyGate(plan.concurrency.maxValue) : undefined,
+        budget: plan.budget ? new TokenBucket(plan.budget, clock()) : undefined,
+        violations: new Map(),
+        ban: undefined,
+        identity: undefined,
       };
       states.set(key, state);
     }
@@ -227,10 +309,14 @@ export function createProxy({ config, profiles, log = () => {}, clock = Date.now
 
     const form = getQueryForm(query);
     Object.assign(entry, { kind: 'query', form, bytesIn, query: query.slice(0, 2_000) });
-    const { plan, windows, gate } = getState(memberName, profile, entry.client);
+    const state = getState(memberName, profile, entry.client);
+    const { plan, limiters, gate, budget } = state;
     politeness = policy.arrive(member.upstream);
+    // The cost of the request for a usage budget, charged on arrival and completed with the cost of its results.
+    let cost = 0;
+    const budgetHeaders = () => budget ? budget.headers(cost, clock()) : {};
     const reject = (status, reason, retryAfterMs, fields) => {
-      const headers = { 'content-type': 'text/plain' };
+      const headers = { 'content-type': 'text/plain', ...budgetHeaders() };
       if (retryAfterMs !== undefined) {
         headers['retry-after'] = String(Math.max(1, Math.ceil(retryAfterMs / 1_000)));
       }
@@ -238,24 +324,99 @@ export function createProxy({ config, profiles, log = () => {}, clock = Date.now
       send(res, status, headers, body);
       finish(status, { reason, retryAfter: headers['retry-after'], bytesOut: Buffer.byteLength(body), ...fields });
     };
+    // A violation of a restriction with a penalty counts towards a ban of the client.
+    const violate = restriction => {
+      if (!restriction.penaltyThreshold || !restriction.penaltyMs) {
+        return;
+      }
+      const now = clock();
+      const times = (state.violations.get(restriction.id) ?? []).filter(time => time > now - restriction.penaltyMs);
+      times.push(now);
+      state.violations.set(restriction.id, times);
+      if (times.length >= restriction.penaltyThreshold) {
+        state.ban = { until: now + restriction.penaltyMs, status: restriction.statusCode ?? 403, reason: restriction.id };
+      }
+    };
+    // An empty partial answer, with the restriction's status (200 by default) and signal header.
+    const degrade = (restriction, reason, fields) => {
+      const answer = emptyAnswer(form, query);
+      const headers = { 'content-type': answer.contentType, ...budgetHeaders() };
+      if (restriction.signalHeader) {
+        headers[restriction.signalHeader] = restriction.emulation.degradedState ?? 'S1TAT';
+      }
+      send(res, restriction.statusCode ?? 200, headers, answer.body);
+      finish(restriction.statusCode ?? 200, { reason, degraded: true, rows: 0, bytesOut: Buffer.byteLength(answer.body), ...fields });
+    };
 
     let holdsSlot = false;
     try {
-      // 1. Emulation: rate and quota restrictions
-      if (windows) {
-        let wait;
-        while ((wait = windows.waitTime(clock())) > 0) {
-          if (!plan.rateQueue) {
-            return reject(plan.rateStatus, 'rate', wait);
-          }
-          await sleep(wait, undefined, { signal: clientGone.signal });
-          queuedMs += wait;
+      // 1. Emulation: bans
+      if (state.ban && clock() < state.ban.until) {
+        return reject(state.ban.status, 'banned', Number.isFinite(state.ban.until) ? state.ban.until - clock() : undefined, { banReason: state.ban.reason });
+      }
+      // Identification
+      for (const restriction of plan.identification) {
+        const value = req.headers[restriction.identificationHeader];
+        if (!validIdentification(restriction, value)) {
+          return reject(restriction.statusCode ?? 403, 'identification');
         }
+        const identity = `${restriction.identificationHeader}:${value}`;
+        state.identity ??= new Map();
+        const known = state.identity.get(restriction.identificationHeader);
+        if (known !== undefined && known !== identity) {
+          // A client that switches identity evades the limits per identity: it is banned for the rest of the run.
+          state.ban = { until: Number.POSITIVE_INFINITY, status: restriction.statusCode ?? 403, reason: 'identity-switch' };
+          return reject(restriction.statusCode ?? 403, 'identity-switch');
+        }
+        state.identity.set(restriction.identificationHeader, identity);
+      }
+      // Rate and quota restrictions
+      for (const limiter of limiters) {
+        if (limiter.mode === 'throttle') {
+          const delay = limiter.throttle(clock());
+          if (delay > 0) {
+            await sleep(delay, undefined, { signal: clientGone.signal });
+            queuedMs += delay;
+          }
+        } else if (limiter.mode === 'reject') {
+          const wait = limiter.waitTime(clock());
+          if (wait > 0) {
+            violate(limiter.restriction);
+            return reject(limiter.restriction.statusCode ?? 429, 'rate', wait);
+          }
+        }
+      }
+      for (const limiter of limiters.filter(candidate => candidate.mode === 'queue')) {
+        const now = clock();
+        const { time, waiting } = limiter.reserve(now);
+        if (limiter.queueLimit !== undefined && waiting > limiter.queueLimit) {
+          limiter.cancelLast();
+          violate(limiter.restriction);
+          return reject(limiter.restriction.statusCode ?? 503, 'rate-queue');
+        }
+        if (time > now) {
+          await sleep(time - now, undefined, { signal: clientGone.signal });
+          queuedMs += time - now;
+        }
+      }
+      // Usage budget
+      if (budget) {
+        const baseCost = budget.baseCost(query);
+        const wait = budget.charge(baseCost, clock());
+        if (wait > 0) {
+          violate(plan.budget);
+          return reject(plan.budget.statusCode ?? 429, 'budget', wait);
+        }
+        cost = baseCost;
       }
       // Concurrency restrictions
       if (gate) {
         if (!gate.tryAcquire()) {
+          if (plan.concurrency.enforcement === 'DegradeQuality') {
+            return degrade(plan.concurrency, 'concurrency-degraded');
+          }
           if (plan.concurrency.enforcement !== 'QueueRequest') {
+            violate(plan.concurrency);
             return reject(plan.concurrency.statusCode ?? 503, 'concurrency', 1_000);
           }
           const queueStart = clock();
@@ -264,7 +425,10 @@ export function createProxy({ config, profiles, log = () => {}, clock = Date.now
         }
         holdsSlot = true;
       }
-      windows?.record(clock());
+      const admitted = clock();
+      for (const limiter of limiters.filter(candidate => candidate.mode === 'reject')) {
+        limiter.record(admitted);
+      }
       if (config.latencyMs > 0) {
         await sleep(config.latencyMs, undefined, { signal: clientGone.signal });
       }
@@ -341,6 +505,9 @@ export function createProxy({ config, profiles, log = () => {}, clock = Date.now
       };
       if (plan.timeoutMs !== undefined && entryRecorded.upstreamMs > plan.timeoutMs) {
         await sleep(plan.timeoutMs, undefined, { signal: clientGone.signal });
+        if (plan.timeoutDegrades) {
+          return degrade(plan.timeoutRestriction, 'timeout-degraded', { upstream: upstreamInfo });
+        }
         return reject(plan.timeoutStatus, 'timeout', undefined, { upstream: upstreamInfo });
       }
       await sleep(entryRecorded.upstreamMs, undefined, { signal: clientGone.signal });
@@ -354,13 +521,16 @@ export function createProxy({ config, profiles, log = () => {}, clock = Date.now
       if (plan.resultReject && result.rows > plan.resultLimit) {
         return reject(plan.resultStatus, 'result-size', undefined, { upstream: upstreamInfo, rows: result.rows });
       }
-      const headers = { 'content-type': entryRecorded.contentType };
-      if (result.truncated) {
+      if (budget) {
+        cost += budget.chargeRows(result.rows, clock());
+      }
+      const headers = { 'content-type': entryRecorded.contentType, ...budgetHeaders() };
+      if (result.truncated && !plan.resultSilent) {
         headers['x-sparql-maxrows'] = String(limit);
       }
       const body = Buffer.from(result.body);
       send(res, 200, headers, body);
-      return finish(200, { rows: result.rows, truncated: result.truncated, upstream: upstreamInfo, bytesOut: body.length });
+      return finish(200, { rows: result.rows, truncated: result.truncated, upstream: upstreamInfo, bytesOut: body.length, cost: budget ? cost : undefined });
     }
 
     async function forward(admission, accept) {
@@ -384,6 +554,9 @@ export function createProxy({ config, profiles, log = () => {}, clock = Date.now
         if (timeoutSignal?.aborted) {
           if (res.headersSent) {
             res.destroy();
+          }
+          if (plan.timeoutDegrades) {
+            return degrade(plan.timeoutRestriction, 'timeout-degraded', fields());
           }
           return reject(plan.timeoutStatus, 'timeout', undefined, fields());
         }
@@ -426,7 +599,7 @@ export function createProxy({ config, profiles, log = () => {}, clock = Date.now
         stopTiming();
         upstreamInfo.bytes = body.length;
         await recorder.store(memberName, query, accept, { status: upstream.status, contentType, body, upstreamMs: upstreamInfo.ms });
-        send(res, upstream.status, { 'content-type': contentType }, body);
+        send(res, upstream.status, { 'content-type': contentType, ...budgetHeaders() }, body);
         return finish(upstream.status, { reason: 'upstream', bytesOut: body.length, ...fields() });
       }
 
@@ -434,7 +607,9 @@ export function createProxy({ config, profiles, log = () => {}, clock = Date.now
       // - with a result limit, it is held back until the limit decides whether it is truncated (at most `limit` results);
       // - with a timeout or a rejecting result limit, or when recording, it is held back until it is complete.
       const limit = plan.resultReject ? undefined : plan.resultLimit;
-      const streaming = limit === undefined && plan.timeoutMs === undefined && !plan.resultReject && !recorder.recording;
+      // With a usage budget, the response is held back too, so that its headers can report the cost of its results.
+      const streaming = limit === undefined && plan.timeoutMs === undefined && !plan.resultReject && !recorder.recording &&
+        !budget;
       const scanner = createScanner(contentType, limit);
       const decoder = new TextDecoder();
       const held = [];
@@ -500,15 +675,18 @@ export function createProxy({ config, profiles, log = () => {}, clock = Date.now
       if (streaming) {
         res.end();
       } else {
-        const headers = { 'content-type': contentType };
-        if (scanner.truncated) {
+        if (budget) {
+          cost += budget.chargeRows(scanner.rows, clock());
+        }
+        const headers = { 'content-type': contentType, ...budgetHeaders() };
+        if (scanner.truncated && !plan.resultSilent) {
           headers['x-sparql-maxrows'] = String(limit);
         }
         const body = Buffer.from(held.join(''));
         bytesOut = body.length;
         send(res, 200, headers, body);
       }
-      return finish(200, { rows: scanner.rows, truncated: scanner.truncated, bytesOut, ...fields() });
+      return finish(200, { rows: scanner.rows, truncated: scanner.truncated, bytesOut, cost: budget ? cost : undefined, ...fields() });
     }
   }
 
@@ -549,6 +727,13 @@ export function createProxy({ config, profiles, log = () => {}, clock = Date.now
       const endpointUrl = `${config.publicBaseUrl}:${member.port}/${profileId}/provided/sparql`;
       return send(res, 200, { 'content-type': 'text/turtle' }, serviceDescription(endpointUrl, profile, memberName));
     }
+    if (req.method === 'GET' && url.pathname === '/assignment') {
+      const profile = profiles.get(url.searchParams.get('profile') ?? '');
+      if (!profile) {
+        return json(404, { error: `Unknown profile; use one of: ${[ ...profiles.keys() ].join(', ')}` });
+      }
+      return json(200, { profile: profile.id, assignment: profile.assignment ?? null });
+    }
     if (req.method === 'GET' && url.pathname === '/safety') {
       return json(200, safety.status());
     }
@@ -565,12 +750,13 @@ export function createProxy({ config, profiles, log = () => {}, clock = Date.now
     }
     send(res, 404, { 'content-type': 'text/plain' }, [
       'Use POST /reset?run=<id>, GET /stats?run=<id>, GET /health, GET /vord/<profile>/<endpoint>.ttl,',
+      'GET /assignment?profile=<id>,',
       'GET /safety, POST /safety/kill, POST /safety/resume or POST /safety/close[?host=<host>]',
       '',
     ].join('\n'));
   }
 
-  return { handleEndpoint, handleAdmin, getRunStats, states, safety, policy, recorder };
+  return { handleEndpoint, handleAdmin, getRunStats, states, safety, policy, recorder, profiles };
 }
 
 async function readQuery(req, url) {

@@ -1,0 +1,30 @@
+{
+  "id": "uniprot",
+  "code": "U",
+  "group": "documented",
+  "label": "a rate-limited bio endpoint (UniProt-like)",
+  "description": "sparql.uniprot.org returns 429 with Retry-After: 10 after 30–35 requests within one second (measured in 2026; the limit is not published). It has a 45-minute timeout and no practical row limit.",
+  "basedOn": [
+    {
+      "source": "Did LLMs kill SPARQL federation? (measurement of sparql.uniprot.org)",
+      "url": "https://rubensworks.github.io/article-did-llms-kill-sparql-federation",
+      "retrieved": "2026-11-20"
+    }
+  ],
+  "restrictions": [
+    {
+      "id": "rate",
+      "type": "RateRestriction",
+      "metric": "requestsPerWindow",
+      "maxValue": 30,
+      "windowDuration": "PT1S",
+      "unit": "COUNT",
+      "scope": "PerClientIP",
+      "enforcement": "RejectRequest",
+      "hardRestriction": true,
+      "returnsStatusCode": 429,
+      "retryAfterHint": "PT10S",
+      "httpSignalHeader": "retry-after"
+    }
+  ]
+}
